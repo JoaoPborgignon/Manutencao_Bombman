@@ -2767,6 +2767,16 @@ class Animation(object):
 
 #==============================================================================
 
+## Menu text colors for boolean settings, in the format described below.
+
+MENU_COLOR_ON = "^#1DF53A"
+MENU_COLOR_OFF = "^#F51111"
+
+## Formats a boolean as the colored on/off label shown in menus.
+
+def bool_to_on_off(bool_value):
+  return MENU_COLOR_ON + "on" if bool_value else MENU_COLOR_OFF + "off"
+
 ## Abstract class representing a game menu. Menu item strings can contain formatting characters:
 #
 #  ^htmlcolorcode - sets the text color (HTML #rrggbb format,e.g. ^#2E44BF) from here to end of line or another formatting character
@@ -3077,9 +3087,6 @@ class PlayMenu(Menu):
 #==============================================================================
       
 class SettingsMenu(Menu):
-  COLOR_ON = "^#1DF53A"
-  COLOR_OFF = "^#F51111"
-
   #----------------------------------------------------------------------------
   
   def __init__(self, sound_player, settings, game):
@@ -3089,23 +3096,34 @@ class SettingsMenu(Menu):
     self.update_items()  
 
   #----------------------------------------------------------------------------
-   
-  def bool_to_str(self, bool_value):
-    return SettingsMenu.COLOR_ON + "on" if bool_value else SettingsMenu.COLOR_OFF + "off"
-
-  #----------------------------------------------------------------------------
     
   def update_items(self):
     self.items = [(
-      "sound volume: " + (SettingsMenu.COLOR_ON if self.settings.sound_is_on() else SettingsMenu.COLOR_OFF) + str(int(self.settings.sound_volume * 10) * 10) + " %",
-      "music volume: " + (SettingsMenu.COLOR_ON if self.settings.music_is_on() > 0.0 else SettingsMenu.COLOR_OFF) + str(int(self.settings.music_volume * 10) * 10) + " %",
+      "sound volume: " + (MENU_COLOR_ON if self.settings.sound_is_on() else MENU_COLOR_OFF) + str(int(self.settings.sound_volume * 10) * 10) + " %",
+      "music volume: " + (MENU_COLOR_ON if self.settings.music_is_on() > 0.0 else MENU_COLOR_OFF) + str(int(self.settings.music_volume * 10) * 10) + " %",
       "screen resolution: " + str(self.settings.screen_resolution[0]) + " x " + str(self.settings.screen_resolution[1]),
-      "fullscreen: " + self.bool_to_str(self.settings.fullscreen),
-      "allow control by mouse: " + self.bool_to_str(self.settings.control_by_mouse),
+      "fullscreen: " + bool_to_on_off(self.settings.fullscreen),
+      "allow control by mouse: " + bool_to_on_off(self.settings.control_by_mouse),
       "configure controls",
       "complete reset",
       "back"
       )]    
+
+  #----------------------------------------------------------------------------
+
+  ## Changes one of the volume settings by delta, clamped to the 0.0 - 1.0 range.
+
+  def __change_volume(self, setting_name, delta):
+    new_volume = getattr(self.settings,setting_name) + delta
+    setattr(self.settings,setting_name,min(1.0,max(0.0,new_volume)))
+
+  #----------------------------------------------------------------------------
+
+  ## Moves the screen resolution selection by step positions, wrapping around.
+
+  def __cycle_resolution(self, step):
+    resolutions = Settings.POSSIBLE_SCREEN_RESOLUTIONS
+    self.settings.screen_resolution = resolutions[(self.settings.current_resolution_index() + step) % len(resolutions)]
 
   #----------------------------------------------------------------------------
     
@@ -3116,34 +3134,21 @@ class SettingsMenu(Menu):
     
     mouse_control_selected = False
     fullscreen_selected = False
+    apply_changed_settings = None      ##< apply_* method matching the changed setting, None if nothing changed
     
     if self.state == Menu.MENU_STATE_SELECTING:
-      if action == PlayerKeyMaps.ACTION_RIGHT:
+      if action in (PlayerKeyMaps.ACTION_RIGHT,PlayerKeyMaps.ACTION_LEFT):
+        direction = 1 if action == PlayerKeyMaps.ACTION_RIGHT else -1
+
         if self.selected_item == (0,0):
-          self.settings.sound_volume = min(1.0,self.settings.sound_volume + 0.1)
-          self.game.apply_sound_settings()
-          self.game.save_settings()
+          self.__change_volume("sound_volume",direction * 0.1)
+          apply_changed_settings = self.game.apply_sound_settings
         elif self.selected_item == (1,0):
-          self.settings.music_volume = min(1.0,self.settings.music_volume + 0.1)
-          self.game.apply_sound_settings()
-          self.game.save_settings()
+          self.__change_volume("music_volume",direction * 0.1)
+          apply_changed_settings = self.game.apply_sound_settings
         elif self.selected_item == (2,0):
-          self.settings.screen_resolution = Settings.POSSIBLE_SCREEN_RESOLUTIONS[(self.settings.current_resolution_index() + 1) % len(Settings.POSSIBLE_SCREEN_RESOLUTIONS)]      
-          self.game.apply_screen_settings()
-          self.game.save_settings()
-      elif action == PlayerKeyMaps.ACTION_LEFT:
-        if self.selected_item == (0,0):
-          self.settings.sound_volume = max(0.0,self.settings.sound_volume - 0.1)
-          self.game.apply_sound_settings()
-          self.game.save_settings()
-        elif self.selected_item == (1,0):
-          self.settings.music_volume = max(0.0,self.settings.music_volume - 0.1)
-          self.game.apply_sound_settings()
-          self.game.save_settings()
-        elif self.selected_item == (2,0):
-          self.settings.screen_resolution = Settings.POSSIBLE_SCREEN_RESOLUTIONS[(self.settings.current_resolution_index() - 1) % len(Settings.POSSIBLE_SCREEN_RESOLUTIONS)]
-          self.game.apply_screen_settings()
-          self.game.save_settings()
+          self.__cycle_resolution(direction)
+          apply_changed_settings = self.game.apply_screen_settings
     elif self.state == Menu.MENU_STATE_CONFIRM:
       if self.selected_item == (6,0):
         
@@ -3167,15 +3172,17 @@ class SettingsMenu(Menu):
       
     if mouse_control_selected:
       self.settings.control_by_mouse = not self.settings.control_by_mouse
-      self.game.apply_other_settings()
-      self.game.save_settings()
+      apply_changed_settings = self.game.apply_other_settings
       self.state = Menu.MENU_STATE_SELECTING
       
     if fullscreen_selected:
       self.settings.fullscreen = not self.settings.fullscreen
-      self.game.apply_screen_settings()
-      self.game.save_settings()
+      apply_changed_settings = self.game.apply_screen_settings
       self.state = Menu.MENU_STATE_SELECTING
+
+    if apply_changed_settings != None:
+      apply_changed_settings()
+      self.game.save_settings()
 
     self.update_items()
 
@@ -4933,6 +4940,17 @@ class AI(object):
 
 #==============================================================================
     
+## Parses a "WIDTHxHEIGHT" string from the settings file into a resolution tuple.
+
+def parse_resolution(value_string):
+  helper_tuple = value_string.split("x")
+  return (int(helper_tuple[0]),int(helper_tuple[1]))
+
+## Parses a boolean the way save_to_string() writes it.
+
+def parse_bool(value_string):
+  return True if value_string == "True" else False
+
 class Settings(StringSerializable):
   POSSIBLE_SCREEN_RESOLUTIONS = (
     (960,720),
@@ -4946,6 +4964,15 @@ class Settings(StringSerializable):
   
   SOUND_VOLUME_THRESHOLD = 0.01
   CONTROL_MAPPING_DELIMITER = "CONTROL MAPPING"
+
+  ## Maps a key in the settings file to (attribute name, value parser).
+  SETTING_PARSERS = {
+    "sound volume":      ("sound_volume",float),
+    "music volume":      ("music_volume",float),
+    "screen resolution": ("screen_resolution",parse_resolution),
+    "fullscreen":        ("fullscreen",parse_bool),
+    "control by mouse":  ("control_by_mouse",parse_bool)
+    }
   
   #----------------------------------------------------------------------------
 
@@ -5010,17 +5037,9 @@ class Settings(StringSerializable):
       key_string = line[:helper_position]
       value_string = line[helper_position + 1:].lstrip().rstrip()
       
-      if key_string == "sound volume":
-        self.sound_volume = float(value_string)
-      elif key_string == "music volume":
-        self.music_volume = float(value_string)
-      elif key_string == "screen resolution":
-        helper_tuple = value_string.split("x")
-        self.screen_resolution = (int(helper_tuple[0]),int(helper_tuple[1]))
-      elif key_string == "fullscreen":
-        self.fullscreen = True if value_string == "True" else False     
-      elif key_string == "control by mouse":
-        self.control_by_mouse = True if value_string == "True" else False
+      if key_string in Settings.SETTING_PARSERS:
+        attribute_name, parse_value = Settings.SETTING_PARSERS[key_string]
+        setattr(self,attribute_name,parse_value(value_string))
 
   #----------------------------------------------------------------------------
     
