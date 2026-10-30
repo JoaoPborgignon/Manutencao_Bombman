@@ -2767,6 +2767,16 @@ class Animation(object):
 
 #==============================================================================
 
+## Menu text colors for boolean settings, in the format described below.
+
+MENU_COLOR_ON = "^#1DF53A"
+MENU_COLOR_OFF = "^#F51111"
+
+## Formats a boolean as the colored on/off label shown in menus.
+
+def bool_to_on_off(bool_value):
+  return MENU_COLOR_ON + "on" if bool_value else MENU_COLOR_OFF + "off"
+
 ## Abstract class representing a game menu. Menu item strings can contain formatting characters:
 #
 #  ^htmlcolorcode - sets the text color (HTML #rrggbb format,e.g. ^#2E44BF) from here to end of line or another formatting character
@@ -3077,9 +3087,6 @@ class PlayMenu(Menu):
 #==============================================================================
       
 class SettingsMenu(Menu):
-  COLOR_ON = "^#1DF53A"
-  COLOR_OFF = "^#F51111"
-
   #----------------------------------------------------------------------------
   
   def __init__(self, sound_player, settings, game):
@@ -3089,19 +3096,14 @@ class SettingsMenu(Menu):
     self.update_items()  
 
   #----------------------------------------------------------------------------
-   
-  def bool_to_str(self, bool_value):
-    return SettingsMenu.COLOR_ON + "on" if bool_value else SettingsMenu.COLOR_OFF + "off"
-
-  #----------------------------------------------------------------------------
     
   def update_items(self):
     self.items = [(
-      "sound volume: " + (SettingsMenu.COLOR_ON if self.settings.sound_is_on() else SettingsMenu.COLOR_OFF) + str(int(self.settings.sound_volume * 10) * 10) + " %",
-      "music volume: " + (SettingsMenu.COLOR_ON if self.settings.music_is_on() > 0.0 else SettingsMenu.COLOR_OFF) + str(int(self.settings.music_volume * 10) * 10) + " %",
+      "sound volume: " + (MENU_COLOR_ON if self.settings.sound_is_on() else MENU_COLOR_OFF) + str(int(self.settings.sound_volume * 10) * 10) + " %",
+      "music volume: " + (MENU_COLOR_ON if self.settings.music_is_on() > 0.0 else MENU_COLOR_OFF) + str(int(self.settings.music_volume * 10) * 10) + " %",
       "screen resolution: " + str(self.settings.screen_resolution[0]) + " x " + str(self.settings.screen_resolution[1]),
-      "fullscreen: " + self.bool_to_str(self.settings.fullscreen),
-      "allow control by mouse: " + self.bool_to_str(self.settings.control_by_mouse),
+      "fullscreen: " + bool_to_on_off(self.settings.fullscreen),
+      "allow control by mouse: " + bool_to_on_off(self.settings.control_by_mouse),
       "configure controls",
       "complete reset",
       "back"
