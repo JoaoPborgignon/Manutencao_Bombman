@@ -3108,6 +3108,22 @@ class SettingsMenu(Menu):
       )]    
 
   #----------------------------------------------------------------------------
+
+  ## Changes one of the volume settings by delta, clamped to the 0.0 - 1.0 range.
+
+  def __change_volume(self, setting_name, delta):
+    new_volume = getattr(self.settings,setting_name) + delta
+    setattr(self.settings,setting_name,min(1.0,max(0.0,new_volume)))
+
+  #----------------------------------------------------------------------------
+
+  ## Moves the screen resolution selection by step positions, wrapping around.
+
+  def __cycle_resolution(self, step):
+    resolutions = Settings.POSSIBLE_SCREEN_RESOLUTIONS
+    self.settings.screen_resolution = resolutions[(self.settings.current_resolution_index() + step) % len(resolutions)]
+
+  #----------------------------------------------------------------------------
     
   def action_pressed(self, action):
     super(SettingsMenu,self).action_pressed(action)
@@ -3119,25 +3135,17 @@ class SettingsMenu(Menu):
     apply_changed_settings = None      ##< apply_* method matching the changed setting, None if nothing changed
     
     if self.state == Menu.MENU_STATE_SELECTING:
-      if action == PlayerKeyMaps.ACTION_RIGHT:
+      if action in (PlayerKeyMaps.ACTION_RIGHT,PlayerKeyMaps.ACTION_LEFT):
+        direction = 1 if action == PlayerKeyMaps.ACTION_RIGHT else -1
+
         if self.selected_item == (0,0):
-          self.settings.sound_volume = min(1.0,self.settings.sound_volume + 0.1)
+          self.__change_volume("sound_volume",direction * 0.1)
           apply_changed_settings = self.game.apply_sound_settings
         elif self.selected_item == (1,0):
-          self.settings.music_volume = min(1.0,self.settings.music_volume + 0.1)
+          self.__change_volume("music_volume",direction * 0.1)
           apply_changed_settings = self.game.apply_sound_settings
         elif self.selected_item == (2,0):
-          self.settings.screen_resolution = Settings.POSSIBLE_SCREEN_RESOLUTIONS[(self.settings.current_resolution_index() + 1) % len(Settings.POSSIBLE_SCREEN_RESOLUTIONS)]      
-          apply_changed_settings = self.game.apply_screen_settings
-      elif action == PlayerKeyMaps.ACTION_LEFT:
-        if self.selected_item == (0,0):
-          self.settings.sound_volume = max(0.0,self.settings.sound_volume - 0.1)
-          apply_changed_settings = self.game.apply_sound_settings
-        elif self.selected_item == (1,0):
-          self.settings.music_volume = max(0.0,self.settings.music_volume - 0.1)
-          apply_changed_settings = self.game.apply_sound_settings
-        elif self.selected_item == (2,0):
-          self.settings.screen_resolution = Settings.POSSIBLE_SCREEN_RESOLUTIONS[(self.settings.current_resolution_index() - 1) % len(Settings.POSSIBLE_SCREEN_RESOLUTIONS)]
+          self.__cycle_resolution(direction)
           apply_changed_settings = self.game.apply_screen_settings
     elif self.state == Menu.MENU_STATE_CONFIRM:
       if self.selected_item == (6,0):
