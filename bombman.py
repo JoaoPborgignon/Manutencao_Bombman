@@ -4938,6 +4938,17 @@ class AI(object):
 
 #==============================================================================
     
+## Parses a "WIDTHxHEIGHT" string from the settings file into a resolution tuple.
+
+def parse_resolution(value_string):
+  helper_tuple = value_string.split("x")
+  return (int(helper_tuple[0]),int(helper_tuple[1]))
+
+## Parses a boolean the way save_to_string() writes it.
+
+def parse_bool(value_string):
+  return True if value_string == "True" else False
+
 class Settings(StringSerializable):
   POSSIBLE_SCREEN_RESOLUTIONS = (
     (960,720),
@@ -4951,6 +4962,15 @@ class Settings(StringSerializable):
   
   SOUND_VOLUME_THRESHOLD = 0.01
   CONTROL_MAPPING_DELIMITER = "CONTROL MAPPING"
+
+  ## Maps a key in the settings file to (attribute name, value parser).
+  SETTING_PARSERS = {
+    "sound volume":      ("sound_volume",float),
+    "music volume":      ("music_volume",float),
+    "screen resolution": ("screen_resolution",parse_resolution),
+    "fullscreen":        ("fullscreen",parse_bool),
+    "control by mouse":  ("control_by_mouse",parse_bool)
+    }
   
   #----------------------------------------------------------------------------
 
@@ -5015,17 +5035,9 @@ class Settings(StringSerializable):
       key_string = line[:helper_position]
       value_string = line[helper_position + 1:].lstrip().rstrip()
       
-      if key_string == "sound volume":
-        self.sound_volume = float(value_string)
-      elif key_string == "music volume":
-        self.music_volume = float(value_string)
-      elif key_string == "screen resolution":
-        helper_tuple = value_string.split("x")
-        self.screen_resolution = (int(helper_tuple[0]),int(helper_tuple[1]))
-      elif key_string == "fullscreen":
-        self.fullscreen = True if value_string == "True" else False     
-      elif key_string == "control by mouse":
-        self.control_by_mouse = True if value_string == "True" else False
+      if key_string in Settings.SETTING_PARSERS:
+        attribute_name, parse_value = Settings.SETTING_PARSERS[key_string]
+        setattr(self,attribute_name,parse_value(value_string))
 
   #----------------------------------------------------------------------------
     
