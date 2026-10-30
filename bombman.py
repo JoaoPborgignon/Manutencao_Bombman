@@ -3116,34 +3116,29 @@ class SettingsMenu(Menu):
     
     mouse_control_selected = False
     fullscreen_selected = False
+    apply_changed_settings = None      ##< apply_* method matching the changed setting, None if nothing changed
     
     if self.state == Menu.MENU_STATE_SELECTING:
       if action == PlayerKeyMaps.ACTION_RIGHT:
         if self.selected_item == (0,0):
           self.settings.sound_volume = min(1.0,self.settings.sound_volume + 0.1)
-          self.game.apply_sound_settings()
-          self.game.save_settings()
+          apply_changed_settings = self.game.apply_sound_settings
         elif self.selected_item == (1,0):
           self.settings.music_volume = min(1.0,self.settings.music_volume + 0.1)
-          self.game.apply_sound_settings()
-          self.game.save_settings()
+          apply_changed_settings = self.game.apply_sound_settings
         elif self.selected_item == (2,0):
           self.settings.screen_resolution = Settings.POSSIBLE_SCREEN_RESOLUTIONS[(self.settings.current_resolution_index() + 1) % len(Settings.POSSIBLE_SCREEN_RESOLUTIONS)]      
-          self.game.apply_screen_settings()
-          self.game.save_settings()
+          apply_changed_settings = self.game.apply_screen_settings
       elif action == PlayerKeyMaps.ACTION_LEFT:
         if self.selected_item == (0,0):
           self.settings.sound_volume = max(0.0,self.settings.sound_volume - 0.1)
-          self.game.apply_sound_settings()
-          self.game.save_settings()
+          apply_changed_settings = self.game.apply_sound_settings
         elif self.selected_item == (1,0):
           self.settings.music_volume = max(0.0,self.settings.music_volume - 0.1)
-          self.game.apply_sound_settings()
-          self.game.save_settings()
+          apply_changed_settings = self.game.apply_sound_settings
         elif self.selected_item == (2,0):
           self.settings.screen_resolution = Settings.POSSIBLE_SCREEN_RESOLUTIONS[(self.settings.current_resolution_index() - 1) % len(Settings.POSSIBLE_SCREEN_RESOLUTIONS)]
-          self.game.apply_screen_settings()
-          self.game.save_settings()
+          apply_changed_settings = self.game.apply_screen_settings
     elif self.state == Menu.MENU_STATE_CONFIRM:
       if self.selected_item == (6,0):
         
@@ -3167,15 +3162,17 @@ class SettingsMenu(Menu):
       
     if mouse_control_selected:
       self.settings.control_by_mouse = not self.settings.control_by_mouse
-      self.game.apply_other_settings()
-      self.game.save_settings()
+      apply_changed_settings = self.game.apply_other_settings
       self.state = Menu.MENU_STATE_SELECTING
       
     if fullscreen_selected:
       self.settings.fullscreen = not self.settings.fullscreen
-      self.game.apply_screen_settings()
-      self.game.save_settings()
+      apply_changed_settings = self.game.apply_screen_settings
       self.state = Menu.MENU_STATE_SELECTING
+
+    if apply_changed_settings != None:
+      apply_changed_settings()
+      self.game.save_settings()
 
     self.update_items()
 
