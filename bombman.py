@@ -1615,17 +1615,11 @@ class GameMap(object):
   #----------------------------------------------------------------------------
 
   def bombs_on_tile(self, tile_coordinates):
-    result = []
-    
     tile_coordinates = Positionable.position_to_tile(tile_coordinates)
-    
-    for bomb in self.bombs:
-      bomb_tile_position = bomb.get_tile_position()
 
-      if bomb.movement != Bomb.BOMB_FLYING and bomb_tile_position[0] == tile_coordinates[0] and bomb_tile_position[1] == tile_coordinates[1]:
-        result.append(bomb)
-      
-    return result
+    return [bomb for bomb in self.bombs
+            if bomb.movement != Bomb.BOMB_FLYING
+            and bomb.get_tile_position() == tile_coordinates]
 
   #----------------------------------------------------------------------------
 
