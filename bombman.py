@@ -1144,6 +1144,29 @@ class RoundInfo(object):
   def is_last_round(self):
     return self.game_number >= self.max_games
 
+class EventQueue(object):
+  """Collects sound and animation events produced during a frame."""
+
+  def __init__(self):
+    self.sound_events = []
+    self.animation_events = []
+
+  def add_sound(self, sound_event):
+    self.sound_events.append(sound_event)
+
+  def add_animation(self, animation_event, coordinates):
+    self.animation_events.append((animation_event, coordinates))
+
+  def pop_sounds(self):
+    result = self.sound_events[:]
+    self.sound_events = []
+    return result
+
+  def pop_animations(self):
+    result = self.animation_events[:]
+    self.animation_events = []
+    return result
+
 ## Holds and manipulates the map data including the players, bombs etc.
 
 class GameMap(object):
@@ -1332,8 +1355,7 @@ class GameMap(object):
       self.player_starting_items.append(item_to_give)
 
     self.bombs = []
-    self.sound_events = []
-    self.animation_events = []
+    self.events = EventQueue()
     self.items_to_give_away = []
 
     self.create_disease_cloud_at = 0
@@ -1439,27 +1461,30 @@ class GameMap(object):
   #----------------------------------------------------------------------------
           
   def add_sound_event(self, sound_event):
-    self.sound_events.append(sound_event)
+    self.events.add_sound(sound_event)
 
   #----------------------------------------------------------------------------
-    
-  def add_animation_event(self, animation_event, coordinates):    
-    self.animation_events.append((animation_event,coordinates))
+
+  def add_animation_event(self, animation_event, coordinates):
+    self.events.add_animation(animation_event, coordinates)
 
   #----------------------------------------------------------------------------
-    
+
   def get_tile_at(self, tile_coordinates):
     if self.tile_is_withing_map(tile_coordinates):
       return self.tiles[tile_coordinates[1]][tile_coordinates[0]]
-    
+
     return None
 
   #----------------------------------------------------------------------------
-    
+
   def get_and_clear_sound_events(self):
-    result = self.sound_events[:]             # copy of the list
-    self.sound_events = []
-    return result
+    return self.events.pop_sounds()
+
+  #----------------------------------------------------------------------------
+
+  def get_and_clear_animation_events(self):
+    return self.events.pop_animations()
 
   #----------------------------------------------------------------------------
 
