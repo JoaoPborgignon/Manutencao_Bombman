@@ -2003,8 +2003,10 @@ class GameMap(object):
 
   #----------------------------------------------------------------------------
 
+  ## Returns a snapshot of the bombs currently on the map.
+
   def get_bombs(self):
-    return self.bombs
+    return tuple(self.bombs)
 
   #----------------------------------------------------------------------------
 
@@ -2012,9 +2014,11 @@ class GameMap(object):
     return self.environment_name
 
   #----------------------------------------------------------------------------
+  
+  ## Returns a snapshot of the players currently on the map.
 
   def get_players(self):
-    return self.players
+    return tuple(self.players)
 
   #----------------------------------------------------------------------------
 
