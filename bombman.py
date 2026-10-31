@@ -1131,6 +1131,42 @@ class MapTile(object):
 
 #==============================================================================
 
+class RoundInfo(object):
+  """Which round of the match this map belongs to."""
+
+  def __init__(self, game_number, max_games):
+    self.game_number = game_number
+    self.max_games = max_games
+
+  def as_tuple(self):
+    return (self.game_number, self.max_games)
+
+  def is_last_round(self):
+    return self.game_number >= self.max_games
+
+class EventQueue(object):
+  """Collects sound and animation events produced during a frame."""
+
+  def __init__(self):
+    self.sound_events = []
+    self.animation_events = []
+
+  def add_sound(self, sound_event):
+    self.sound_events.append(sound_event)
+
+  def add_animation(self, animation_event, coordinates):
+    self.animation_events.append((animation_event, coordinates))
+
+  def pop_sounds(self):
+    result = self.sound_events[:]
+    self.sound_events = []
+    return result
+
+  def pop_animations(self):
+    result = self.animation_events[:]
+    self.animation_events = []
+    return result
+
 ## Holds and manipulates the map data including the players, bombs etc.
 
 class GameMap(object):
@@ -1176,7 +1212,7 @@ class GameMap(object):
   
   ## Initialises a new map from map_data (string) and a PlaySetup object.
 
-  def __init__(self, map_data, play_setup, game_number, max_games, all_items_cheat=False):
+  def __init__(self, map_data, play_setup, round_info, all_items_cheat=False):
     # make the tiles array:
     self.danger_map_is_up_to_date = False                    # to regenerate danger map only when needed
     self.tiles = []
@@ -1195,8 +1231,7 @@ class GameMap(object):
     self.state = GameMap.STATE_WAITING_TO_PLAY
     self.winner_team = -1                          ##< if map state is GameMap.STATE_GAME_OVER, this holds the winning team (-1 = draw)
 
-    self.game_number = game_number
-    self.max_games = max_games
+    self.round_info = round_info
 
     self.earthquake_time_left = 0
 
@@ -1311,21 +1346,19 @@ class GameMap(object):
     start_items_string = string_split[1] if not all_items_cheat else "bbbbbFkxtsssssmp"
     
     self.player_starting_items = []
-    
+
     for i in range(len(start_items_string)):
       for player in self.players:
         item_to_give = self.letter_to_item(start_items_string[i])
-        
         player.give_item(item_to_give)
-      
-      self.player_starting_items.append(item_to_give)
-        
-    self.bombs = []                   ##< bombs on the map
-    self.sound_events = []            ##< list of currently happening sound event (see SoundPlayer class)
-    self.animation_events = []        ##< list of animation events, tuples in format (animation_event, coordinates)
-    self.items_to_give_away = []      ##< list of tuples in format (time_of_giveaway, list_of_items)
 
-    self.create_disease_cloud_at = 0  ##< at what time (in ms) the disease clouds should be released
+      self.player_starting_items.append(item_to_give)
+
+    self.bombs = []
+    self.events = EventQueue()
+    self.items_to_give_away = []
+
+    self.create_disease_cloud_at = 0
 
   #----------------------------------------------------------------------------
 
@@ -1340,12 +1373,11 @@ class GameMap(object):
   #----------------------------------------------------------------------------
 
   ## Returns a tuple (game number, max games).
- 
+
   def get_game_number_info(self):
-    return (self.game_number,self.max_games)
+    return self.round_info.as_tuple()
 
   #----------------------------------------------------------------------------
-
   def start_earthquake(self):
     self.earthquake_time_left = GameMap.EARTHQUAKE_DURATION
 
@@ -1429,27 +1461,30 @@ class GameMap(object):
   #----------------------------------------------------------------------------
           
   def add_sound_event(self, sound_event):
-    self.sound_events.append(sound_event)
+    self.events.add_sound(sound_event)
 
   #----------------------------------------------------------------------------
-    
-  def add_animation_event(self, animation_event, coordinates):    
-    self.animation_events.append((animation_event,coordinates))
+
+  def add_animation_event(self, animation_event, coordinates):
+    self.events.add_animation(animation_event, coordinates)
 
   #----------------------------------------------------------------------------
-    
+
   def get_tile_at(self, tile_coordinates):
     if self.tile_is_withing_map(tile_coordinates):
       return self.tiles[tile_coordinates[1]][tile_coordinates[0]]
-    
+
     return None
 
   #----------------------------------------------------------------------------
-    
+
   def get_and_clear_sound_events(self):
-    result = self.sound_events[:]             # copy of the list
-    self.sound_events = []
-    return result
+    return self.events.pop_sounds()
+
+  #----------------------------------------------------------------------------
+
+  def get_and_clear_animation_events(self):
+    return self.events.pop_animations()
 
   #----------------------------------------------------------------------------
 
@@ -1580,17 +1615,11 @@ class GameMap(object):
   #----------------------------------------------------------------------------
 
   def bombs_on_tile(self, tile_coordinates):
-    result = []
-    
     tile_coordinates = Positionable.position_to_tile(tile_coordinates)
-    
-    for bomb in self.bombs:
-      bomb_tile_position = bomb.get_tile_position()
 
-      if bomb.movement != Bomb.BOMB_FLYING and bomb_tile_position[0] == tile_coordinates[0] and bomb_tile_position[1] == tile_coordinates[1]:
-        result.append(bomb)
-      
-    return result
+    return [bomb for bomb in self.bombs
+            if bomb.movement != Bomb.BOMB_FLYING
+            and bomb.get_tile_position() == tile_coordinates]
 
   #----------------------------------------------------------------------------
 
@@ -1974,8 +2003,10 @@ class GameMap(object):
 
   #----------------------------------------------------------------------------
 
+  ## Returns a snapshot of the bombs currently on the map.
+
   def get_bombs(self):
-    return self.bombs
+    return tuple(self.bombs)
 
   #----------------------------------------------------------------------------
 
@@ -1983,9 +2014,11 @@ class GameMap(object):
     return self.environment_name
 
   #----------------------------------------------------------------------------
+  
+  ## Returns a snapshot of the players currently on the map.
 
   def get_players(self):
-    return self.players
+    return tuple(self.players)
 
   #----------------------------------------------------------------------------
 
@@ -4173,7 +4206,7 @@ class Renderer(object):
     
       with open(os.path.join(Game.MAP_PATH,map_filename)) as map_file:
         map_data = map_file.read()
-        temp_map = GameMap(map_data,PlaySetup(),0,0)
+        temp_map = GameMap(map_data, PlaySetup(), RoundInfo(0, 0))
         
         for y in range(GameMap.MAP_HEIGHT):
           for x in range(GameMap.MAP_WIDTH):
@@ -5432,7 +5465,12 @@ class Game(object):
         
         with open(os.path.join(Game.MAP_PATH,map_name_to_load)) as map_file:
           map_data = map_file.read()
-          self.game_map = GameMap(map_data,self.play_setup,self.game_number,self.play_setup.get_number_of_games(),self.cheat_is_active(Game.CHEAT_ALL_ITEMS))
+          self.game_map = GameMap(
+              map_data,
+              self.play_setup,
+              RoundInfo(self.game_number, self.play_setup.get_number_of_games()),
+              self.cheat_is_active(Game.CHEAT_ALL_ITEMS)
+          )
           
         player_slots = self.play_setup.get_slots()
         
