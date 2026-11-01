@@ -4592,6 +4592,10 @@ class AI(object):
                                 #   for next random(REPEAT_ACTIONS[0],REPEAT_ACTIONS[1]) ms - saves
                                 #   CPU time and prevents jerky AI movement.
 
+  ## Movement action for each of the four directions, in the same order as the
+  #  direction ratings (up, right, down, left).
+  DIRECTION_ACTIONS = (PlayerKeyMaps.ACTION_UP,PlayerKeyMaps.ACTION_RIGHT,PlayerKeyMaps.ACTION_DOWN,PlayerKeyMaps.ACTION_LEFT)
+
   #----------------------------------------------------------------------------
   
   def __init__(self, player, game_map):
@@ -4802,23 +4806,9 @@ class AI(object):
     elif self.game_map.tile_has_bomb(current_tile):
       # standing on a bomb, find a way to escape
       
-      # find maximum
-      best_rating = escape_direction_ratings[0]
-      best_action = PlayerKeyMaps.ACTION_UP
-      
-      if escape_direction_ratings[1] > best_rating:
-        best_rating = escape_direction_ratings[1]
-        best_action = PlayerKeyMaps.ACTION_RIGHT
-        
-      if escape_direction_ratings[2] > best_rating:
-        best_rating = escape_direction_ratings[2]
-        best_action = PlayerKeyMaps.ACTION_DOWN
-      
-      if escape_direction_ratings[3] > best_rating:
-        best_rating = escape_direction_ratings[3]
-        best_action = PlayerKeyMaps.ACTION_LEFT
-      
-      chosen_movement_action = best_action 
+      # find the best rated escape direction (max returns the first one on ties)
+      best_direction = max(range(4),key=lambda direction: escape_direction_ratings[direction])
+      chosen_movement_action = AI.DIRECTION_ACTIONS[best_direction]
     else:             # not standing on a bomb
       
       # should I not move?
