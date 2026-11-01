@@ -176,15 +176,22 @@ class Positionable(object):
 
   #----------------------------------------------------------------------------
   
-  def get_neighbour_tile_coordinates(self):
-    tile_coordinates = self.get_tile_position()
-    
+  ## Returns coordinates of the four tiles next to given tile, in the order
+  #  top, right, down, left. Other code (AI) relies on this order.
+
+  @staticmethod
+  def get_neighbours_of(tile_coordinates):
     top = (tile_coordinates[0],tile_coordinates[1] - 1)
     right = (tile_coordinates[0] + 1,tile_coordinates[1])
     down = (tile_coordinates[0],tile_coordinates[1] + 1)
-    left = (tile_coordinates[0] - 1,tile_coordinates[1])  
-    
+    left = (tile_coordinates[0] - 1,tile_coordinates[1])
+
     return (top,right,down,left)
+
+  #----------------------------------------------------------------------------
+
+  def get_neighbour_tile_coordinates(self):
+    return Positionable.get_neighbours_of(self.get_tile_position())
 
   #----------------------------------------------------------------------------
   
@@ -4709,12 +4716,7 @@ class AI(object):
       else:
         score -= 10
         
-    top = (tile_coordinates[0],tile_coordinates[1] - 1)
-    right = (tile_coordinates[0] + 1,tile_coordinates[1])
-    down = (tile_coordinates[0],tile_coordinates[1] + 1)
-    left = (tile_coordinates[0] - 1,tile_coordinates[1])
-    
-    if self.game_map.tile_has_lava(top) or self.game_map.tile_has_lava(right) or self.game_map.tile_has_lava(down) or self.game_map.tile_has_lava(left):
+    if any(self.game_map.tile_has_lava(neighbour) for neighbour in Positionable.get_neighbours_of(tile_coordinates)):
       score -= 5    # don't go near lava
     
     if self.game_map.tile_has_bomb(tile_coordinates):
