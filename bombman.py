@@ -176,15 +176,22 @@ class Positionable(object):
 
   #----------------------------------------------------------------------------
   
-  def get_neighbour_tile_coordinates(self):
-    tile_coordinates = self.get_tile_position()
-    
+  ## Returns coordinates of the four tiles next to given tile, in the order
+  #  top, right, down, left. Other code (AI) relies on this order.
+
+  @staticmethod
+  def get_neighbours_of(tile_coordinates):
     top = (tile_coordinates[0],tile_coordinates[1] - 1)
     right = (tile_coordinates[0] + 1,tile_coordinates[1])
     down = (tile_coordinates[0],tile_coordinates[1] + 1)
-    left = (tile_coordinates[0] - 1,tile_coordinates[1])  
-    
+    left = (tile_coordinates[0] - 1,tile_coordinates[1])
+
     return (top,right,down,left)
+
+  #----------------------------------------------------------------------------
+
+  def get_neighbour_tile_coordinates(self):
+    return Positionable.get_neighbours_of(self.get_tile_position())
 
   #----------------------------------------------------------------------------
   
@@ -4592,6 +4599,10 @@ class AI(object):
                                 #   for next random(REPEAT_ACTIONS[0],REPEAT_ACTIONS[1]) ms - saves
                                 #   CPU time and prevents jerky AI movement.
 
+  ## Movement action for each of the four directions, in the same order as the
+  #  direction ratings (up, right, down, left).
+  DIRECTION_ACTIONS = (PlayerKeyMaps.ACTION_UP,PlayerKeyMaps.ACTION_RIGHT,PlayerKeyMaps.ACTION_DOWN,PlayerKeyMaps.ACTION_LEFT)
+
   #----------------------------------------------------------------------------
   
   def __init__(self, player, game_map):
@@ -4705,12 +4716,7 @@ class AI(object):
       else:
         score -= 10
         
-    top = (tile_coordinates[0],tile_coordinates[1] - 1)
-    right = (tile_coordinates[0] + 1,tile_coordinates[1])
-    down = (tile_coordinates[0],tile_coordinates[1] + 1)
-    left = (tile_coordinates[0] - 1,tile_coordinates[1])
-    
-    if self.game_map.tile_has_lava(top) or self.game_map.tile_has_lava(right) or self.game_map.tile_has_lava(down) or self.game_map.tile_has_lava(left):
+    if any(self.game_map.tile_has_lava(neighbour) for neighbour in Positionable.get_neighbours_of(tile_coordinates)):
       score -= 5    # don't go near lava
     
     if self.game_map.tile_has_bomb(tile_coordinates):
@@ -4781,8 +4787,11 @@ class AI(object):
     
     current_time = self.game_map.get_map_time()
     
-    if current_time < self.recompute_compute_actions_on or self.player.get_state() == Player.STATE_IN_AIR or self.player.get_state() == Player.STATE_TELEPORTING:
-      return self.outputs          # only repeat actions
+    still_in_decision_cooldown = current_time < self.recompute_compute_actions_on
+    player_is_mid_transition = self.player.get_state() in (Player.STATE_IN_AIR,Player.STATE_TELEPORTING)
+
+    if still_in_decision_cooldown or player_is_mid_transition:
+      return self.outputs          # repeat the previous actions
      
     # start decisions here:
     
@@ -4802,23 +4811,9 @@ class AI(object):
     elif self.game_map.tile_has_bomb(current_tile):
       # standing on a bomb, find a way to escape
       
-      # find maximum
-      best_rating = escape_direction_ratings[0]
-      best_action = PlayerKeyMaps.ACTION_UP
-      
-      if escape_direction_ratings[1] > best_rating:
-        best_rating = escape_direction_ratings[1]
-        best_action = PlayerKeyMaps.ACTION_RIGHT
-        
-      if escape_direction_ratings[2] > best_rating:
-        best_rating = escape_direction_ratings[2]
-        best_action = PlayerKeyMaps.ACTION_DOWN
-      
-      if escape_direction_ratings[3] > best_rating:
-        best_rating = escape_direction_ratings[3]
-        best_action = PlayerKeyMaps.ACTION_LEFT
-      
-      chosen_movement_action = best_action 
+      # find the best rated escape direction (max returns the first one on ties)
+      best_direction = max(range(4),key=lambda direction: escape_direction_ratings[direction])
+      chosen_movement_action = AI.DIRECTION_ACTIONS[best_direction]
     else:             # not standing on a bomb
       
       # should I not move?
@@ -4938,38 +4933,34 @@ class AI(object):
     
     multibomb_count = self.player.get_multibomb_count()
     
-    if multibomb_count > 1:        # multibomb possible
-      current_tile = self.player.get_tile_position()
+    if multibomb_count <= 1:       # multibomb not possible
+      return False
 
-      player_direction = movement_action if movement_action != None else self.player.get_direction_number()
+    current_tile = self.player.get_tile_position()
 
-      # by laying multibomb one of the escape routes will be cut off, let's check
-      # if there would be any escape routes left
-      
-      escape_direction_ratings = list(self.rate_bomb_escape_directions(current_tile))
-      escape_direction_ratings[player_direction] = 0
-      
-      if max(escape_direction_ratings) == 0:
+    player_direction = movement_action if movement_action != None else self.player.get_direction_number()
+
+    # by laying multibomb one of the escape routes will be cut off, let's check
+    # if there would be any escape routes left
+
+    escape_direction_ratings = list(self.rate_bomb_escape_directions(current_tile))
+    escape_direction_ratings[player_direction] = 0
+
+    if max(escape_direction_ratings) == 0:
+      return False
+
+    direction_vector = self.player.get_direction_vector()
+
+    for i in range(multibomb_count):
+      if not self.game_map.tile_is_walkable(current_tile) or not self.game_map.tile_is_withing_map(current_tile):
+        break
+
+      if self.game_map.get_danger_value(current_tile) < 3000 or self.game_map.tile_has_lava(current_tile):
         return False
 
-      direction_vector = self.player.get_direction_vector()
-      
-      multibomb_safe = True
-      
-      for i in range(multibomb_count):
-        if not self.game_map.tile_is_walkable(current_tile) or not self.game_map.tile_is_withing_map(current_tile):
-          break
-        
-        if self.game_map.get_danger_value(current_tile) < 3000 or self.game_map.tile_has_lava(current_tile):
-          multibomb_safe = False
-          break
-        
-        current_tile = (current_tile[0] + direction_vector[0],current_tile[1] + direction_vector[1])
-        
-      if multibomb_safe:
-        return True
-      
-    return False
+      current_tile = (current_tile[0] + direction_vector[0],current_tile[1] + direction_vector[1])
+
+    return True
 
 #==============================================================================
     
