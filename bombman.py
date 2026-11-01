@@ -4933,38 +4933,34 @@ class AI(object):
     
     multibomb_count = self.player.get_multibomb_count()
     
-    if multibomb_count > 1:        # multibomb possible
-      current_tile = self.player.get_tile_position()
+    if multibomb_count <= 1:       # multibomb not possible
+      return False
 
-      player_direction = movement_action if movement_action != None else self.player.get_direction_number()
+    current_tile = self.player.get_tile_position()
 
-      # by laying multibomb one of the escape routes will be cut off, let's check
-      # if there would be any escape routes left
-      
-      escape_direction_ratings = list(self.rate_bomb_escape_directions(current_tile))
-      escape_direction_ratings[player_direction] = 0
-      
-      if max(escape_direction_ratings) == 0:
+    player_direction = movement_action if movement_action != None else self.player.get_direction_number()
+
+    # by laying multibomb one of the escape routes will be cut off, let's check
+    # if there would be any escape routes left
+
+    escape_direction_ratings = list(self.rate_bomb_escape_directions(current_tile))
+    escape_direction_ratings[player_direction] = 0
+
+    if max(escape_direction_ratings) == 0:
+      return False
+
+    direction_vector = self.player.get_direction_vector()
+
+    for i in range(multibomb_count):
+      if not self.game_map.tile_is_walkable(current_tile) or not self.game_map.tile_is_withing_map(current_tile):
+        break
+
+      if self.game_map.get_danger_value(current_tile) < 3000 or self.game_map.tile_has_lava(current_tile):
         return False
 
-      direction_vector = self.player.get_direction_vector()
-      
-      multibomb_safe = True
-      
-      for i in range(multibomb_count):
-        if not self.game_map.tile_is_walkable(current_tile) or not self.game_map.tile_is_withing_map(current_tile):
-          break
-        
-        if self.game_map.get_danger_value(current_tile) < 3000 or self.game_map.tile_has_lava(current_tile):
-          multibomb_safe = False
-          break
-        
-        current_tile = (current_tile[0] + direction_vector[0],current_tile[1] + direction_vector[1])
-        
-      if multibomb_safe:
-        return True
-      
-    return False
+      current_tile = (current_tile[0] + direction_vector[0],current_tile[1] + direction_vector[1])
+
+    return True
 
 #==============================================================================
     
