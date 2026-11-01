@@ -4785,8 +4785,11 @@ class AI(object):
     
     current_time = self.game_map.get_map_time()
     
-    if current_time < self.recompute_compute_actions_on or self.player.get_state() == Player.STATE_IN_AIR or self.player.get_state() == Player.STATE_TELEPORTING:
-      return self.outputs          # only repeat actions
+    still_in_decision_cooldown = current_time < self.recompute_compute_actions_on
+    player_is_mid_transition = self.player.get_state() in (Player.STATE_IN_AIR,Player.STATE_TELEPORTING)
+
+    if still_in_decision_cooldown or player_is_mid_transition:
+      return self.outputs          # repeat the previous actions
      
     # start decisions here:
     
