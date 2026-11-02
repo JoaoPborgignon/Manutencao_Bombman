@@ -1495,13 +1495,6 @@ class GameMap(object):
 
   #----------------------------------------------------------------------------
 
-  def get_and_clear_animation_events(self):
-    result = self.animation_events[:]         # copy of the list
-    self.animation_events = []
-    return result
-
-  #----------------------------------------------------------------------------
-
   ## Converts given letter (as in map encoding string) to item code (see class constants).
   
   def letter_to_item(self, letter):
