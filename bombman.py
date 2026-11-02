@@ -1240,6 +1240,8 @@ class GameMap(object):
 
     self.round_info = round_info
 
+    self.time_limit = play_setup.get_time_limit() * 1000   ##< time limit of the game in ms (0 = no limit), counted from the start of play
+
     self.earthquake_time_left = 0
 
     self.time_from_start = 0                       ##< time in ms from the start of the map, the time increases with each update (so time spent in game menu is excluded)
@@ -1630,6 +1632,22 @@ class GameMap(object):
 
   #----------------------------------------------------------------------------
 
+  ## Gets the time in ms left until the time limit runs out, or None if the
+  #  game has no time limit.
+
+  def get_time_left(self):
+    if self.time_limit <= 0:
+      return None
+
+    return max(0,self.start_game_at + self.time_limit - self.time_from_start)
+
+  #----------------------------------------------------------------------------
+
+  def time_is_up(self):
+    return self.get_time_left() == 0
+
+  #----------------------------------------------------------------------------
+
   ## Tells the map that given bomb is exploding, the map then creates
   #  flames from the bomb, the bomb is destroyed and players are informed.
 
@@ -1980,10 +1998,10 @@ class GameMap(object):
         if self.time_from_start >= self.announce_win_at:
           self.add_sound_event(SoundPlayer.SOUND_EVENT_WIN_0 + self.winner_team)
           self.win_announced = True
-    elif self.state != GameMap.STATE_GAME_OVER and self.game_is_over:
+    elif self.state != GameMap.STATE_GAME_OVER and (self.game_is_over or self.time_is_up()):
       self.end_game_at = self.time_from_start + 5000
       self.state = GameMap.STATE_FINISHING
-      self.winner_team = self.winning_color
+      self.winner_team = self.winning_color if self.game_is_over else -1   # time up = draw
       self.announce_win_at = self.time_from_start + 2000
     
   #----------------------------------------------------------------------------
@@ -2058,6 +2076,7 @@ class GameMap(object):
 
 class PlaySetup(object):
   MAX_GAMES = 20
+  TIME_LIMIT_OPTIONS = [0,60,90,120,180,240,300]   ##< possible time limits per game in seconds, 0 = no limit
 
   #----------------------------------------------------------------------------
   
@@ -2065,6 +2084,7 @@ class PlaySetup(object):
     self.player_slots = [None for i in range(10)]    ##< player slots: (player_number, team_color),
                                                      #   negative player_number = AI, slot index ~ player color index
     self.number_of_games = 10
+    self.time_limit = 0                              ##< time limit of each game in seconds, 0 = no limit
     
     # default setup, player 0 vs 3 AI players:
     self.player_slots[0] = (0,0)
@@ -2096,6 +2116,42 @@ class PlaySetup(object):
   
   def decrease_number_of_games(self):
     self.number_of_games = (self.number_of_games - 2) % PlaySetup.MAX_GAMES + 1
+
+  #----------------------------------------------------------------------------
+
+  ## Gets the time limit of each game in seconds (0 = no limit).
+
+  def get_time_limit(self):
+    return self.time_limit
+
+  #----------------------------------------------------------------------------
+
+  def set_time_limit(self, time_limit):
+    self.time_limit = time_limit
+
+  #----------------------------------------------------------------------------
+
+  ## Moves the time limit to the next option in TIME_LIMIT_OPTIONS (wrapping around).
+
+  def increase_time_limit(self):
+    self.__shift_time_limit(1)
+
+  #----------------------------------------------------------------------------
+
+  def decrease_time_limit(self):
+    self.__shift_time_limit(-1)
+
+  #----------------------------------------------------------------------------
+
+  def __shift_time_limit(self, step):
+    options = PlaySetup.TIME_LIMIT_OPTIONS
+
+    try:
+      index = options.index(self.time_limit)
+    except ValueError:   # custom value, restart from no limit
+      index = 0
+
+    self.time_limit = options[(index + step) % len(options)]
    
 #==============================================================================
 
@@ -3421,7 +3477,10 @@ class PlaySetupMenu(Menu):
   #----------------------------------------------------------------------------
     
   def update_items(self):
-    self.items = [[],[],["games: " + str(self.play_setup.get_number_of_games())]]
+    time_limit = self.play_setup.get_time_limit()
+    time_limit_text = "%d:%02d" % (time_limit // 60,time_limit % 60) if time_limit > 0 else "off"
+
+    self.items = [[],[],["games: " + str(self.play_setup.get_number_of_games())],["time: " + time_limit_text]]
     
     dark_grey = (50,50,50)
       
@@ -3452,13 +3511,22 @@ class PlaySetupMenu(Menu):
       if self.selected_item == (0,2):
         self.play_setup.increase_number_of_games()  
         self.state = Menu.MENU_STATE_SELECTING
+      elif self.selected_item == (0,3):
+        self.play_setup.increase_time_limit()
+        self.state = Menu.MENU_STATE_SELECTING
     elif action == PlayerKeyMaps.ACTION_DOWN:
       if self.selected_item == (0,2):
         self.play_setup.decrease_number_of_games()
         self.state = Menu.MENU_STATE_SELECTING
+      elif self.selected_item == (0,3):
+        self.play_setup.decrease_time_limit()
+        self.state = Menu.MENU_STATE_SELECTING
     elif self.state == Menu.MENU_STATE_CONFIRM:  
       if self.selected_item == (0,2):
         self.play_setup.increase_number_of_games()
+        self.state = Menu.MENU_STATE_SELECTING
+      elif self.selected_item == (0,3):
+        self.play_setup.increase_time_limit()
         self.state = Menu.MENU_STATE_SELECTING
     
       if self.selected_item[0] > 0:  # override behaviour for confirm button
@@ -4573,6 +4641,14 @@ class Renderer(object):
    
     profiler.measure_stop("map rend. earthquake")
    
+    time_left = map_to_render.get_time_left()
+
+    if time_left != None:                    # time limit
+      seconds_left = int(math.ceil(time_left / 1000.0))
+      time_left_color = (255,50,50) if seconds_left <= 10 else (255,255,255)
+      time_left_text = self.render_text(self.font_normal,"%d:%02d" % (seconds_left // 60,seconds_left % 60),time_left_color)
+      result.blit(time_left_text,(self.screen_center[0] - time_left_text.get_size()[0] // 2,max(0,self.map_render_location[1] - time_left_text.get_size()[1])))
+
     if map_to_render.get_state() == GameMap.STATE_WAITING_TO_PLAY:
       third = GameMap.START_GAME_AFTER // 3
       
