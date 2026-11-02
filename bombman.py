@@ -183,6 +183,10 @@ class Profiler(object):
 
 class Positionable(object):
 
+  ## How close (in tile units) to a tile's center an object must be to count as centered.
+
+  TILE_CENTER_TOLERANCE = 0.2
+
   #----------------------------------------------------------------------------
 
   def __init__(self):
@@ -241,13 +245,6 @@ class Positionable(object):
     return (int(math.floor(position[0])),int(math.floor(position[1])))
 
   #----------------------------------------------------------------------------
- #Refactor 1: Mudança na antiga classe is_near_tile_center 
-
- class Positionable(object):
-  ## How close (in tile units) to a tile's center an object must be to count as centered.
-  TILE_CENTER_TOLERANCE = 0.2
-
-  ...
 
   def is_near_tile_center(self):
     position_within_tile = (self.position[0] % 1, self.position[1] % 1)
@@ -610,25 +607,43 @@ class Player(Positionable):
     elif item == GameMap.ITEM_DISEASE:
       sound_to_make = self.__apply_disease(game_map)
     
-#refactor 3: Mudança de emaranhado de IFs  no elif item_disease
-      def __pick_random_disease(self):
+    if game_map != None and sound_to_make != None:
+      game_map.add_sound_event(sound_to_make)
+
+  #----------------------------------------------------------------------------
+
+  ## Picks a random disease as a (disease, sound event) pair.
+
+  def __pick_random_disease(self):
     return random.choice([
-      (Player.DISEASE_SHORT_FLAME, SoundPlayer.SOUND_EVENT_DISEASE),
-      # ... demais doencas, como no original
+      (Player.DISEASE_SHORT_FLAME,SoundPlayer.SOUND_EVENT_DISEASE),
+      (Player.DISEASE_SLOW,SoundPlayer.SOUND_EVENT_SLOW),
+      (Player.DISEASE_DIARRHEA,SoundPlayer.SOUND_EVENT_DIARRHEA),
+      (Player.DISEASE_FAST_BOMB,SoundPlayer.SOUND_EVENT_DISEASE),
+      (Player.DISEASE_REVERSE_CONTROLS,SoundPlayer.SOUND_EVENT_DISEASE),
+      (Player.DISEASE_SWITCH_PLAYERS,SoundPlayer.SOUND_EVENT_DISEASE),
+      (Player.DISEASE_NO_BOMB,SoundPlayer.SOUND_EVENT_DISEASE),
+      (Player.DISEASE_EARTHQUAKE,SoundPlayer.SOUND_EVENT_EARTHQUAKE)
       ])
+
+  #----------------------------------------------------------------------------
+
+  ## Swaps this player's position with that of another living player.
 
   def __swap_position_with_random_player(self, game_map):
     players = list(filter(lambda p: not p.is_dead(), game_map.get_players()))
 
     player_to_switch = self
 
-    if len(players) > 1:
+    if len(players) > 1:     # should always be true
       while player_to_switch == self:
         player_to_switch = random.choice(players)
 
     my_position = self.get_position()
     self.set_position(player_to_switch.get_position())
     player_to_switch.set_position(my_position)
+
+  #----------------------------------------------------------------------------
 
   ## Applies a random disease to the player. Returns the sound event to play.
 
@@ -646,31 +661,6 @@ class Player(Positionable):
       self.disease_time_left = Player.DISEASE_TIME
 
     return sound
-      
-      if chosen_disease[0] == Player.DISEASE_SWITCH_PLAYERS:
-        if game_map != None:
-          players = list(filter(lambda p: not p.is_dead(), game_map.get_players()))
-          
-          player_to_switch = self
-          
-          if len(players) > 1:     # should always be true
-            while player_to_switch == self:
-              player_to_switch = random.choice(players)
-          
-          my_position = self.get_position()
-          self.set_position(player_to_switch.get_position())
-          player_to_switch.set_position(my_position)
-      elif chosen_disease[0] == Player.DISEASE_EARTHQUAKE:
-        if game_map != None:
-          game_map.start_earthquake()
-      else:
-        self.disease = chosen_disease[0]
-        self.disease_time_left = Player.DISEASE_TIME
-    
-      sound_to_make = chosen_disease[1]
-    
-    if game_map != None and sound_to_make != None:
-      game_map.add_sound_event(sound_to_make)
 
   #----------------------------------------------------------------------------
     
@@ -940,10 +930,7 @@ class Player(Positionable):
 
   #----------------------------------------------------------------------------
 
-  ## Sets the state and other attributes like position etc. of this player accoording to a list of input action (returned by PlayerKeyMaps.get_current_actions()).
- 
- #Refactor 4: melhoria no react_to_inputs
-   ## Advances a jump/teleport transition. Returns True if the player is still
+  ## Advances a jump/teleport transition. Returns True if the player is still
   #  mid-transition and should not react to inputs this frame.
 
   def __update_transition_state(self, dt):
@@ -962,13 +949,16 @@ class Player(Positionable):
     self.teleporting_to = None
     return False
 
+  #----------------------------------------------------------------------------
+
+  ## Sets the state and other attributes like position etc. of this player accoording to a list of input action (returned by PlayerKeyMaps.get_current_actions()).
+
   def react_to_inputs(self, input_actions, dt, game_map):
     if self.state == Player.STATE_DEAD or game_map.get_state() == GameMap.STATE_WAITING_TO_PLAY:
       return
 
     if self.__update_transition_state(dt):
       return
-    ...
 
     current_speed = self.speed if self.disease != Player.DISEASE_SLOW else Player.SLOW_SPEED
     
