@@ -1,0 +1,11 @@
+# Bombman - runtime dependencies
+#
+# Python: 3.8 or newer (tested on 3.14)
+#
+# pygame-ce is the maintained community fork of pygame and is the
+# recommended package; it is imported as "pygame" just like the original.
+# The upstream package (pygame>=2.0.0) also works - if you prefer it,
+# comment the line below and uncomment the other one.
+
+pygame-ce>=2.5.0
+# pygame>=2.0.0
