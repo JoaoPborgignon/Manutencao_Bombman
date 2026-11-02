@@ -89,6 +89,30 @@ def debug_log(message):
   if DEBUG_VERBOSE:      
     print(message)
 
+#------------------------------------------------------------------------------
+
+MINIMUM_PYGAME_VERSION = (2,0,0)
+
+## Exits with a readable message if the installed pygame is too old for the
+#  APIs used here (SDL2 event types, sparse key codes).
+
+def check_pygame_version():
+  if tuple(pygame.version.vernum)[:3] < MINIMUM_PYGAME_VERSION:
+    sys.exit(
+      "Bombman needs pygame " + ".".join(str(number) for number in MINIMUM_PYGAME_VERSION) +
+      " or newer (found " + pygame.version.ver + "), install the dependencies with: pip install -r requirements.txt")
+
+#------------------------------------------------------------------------------
+
+## Returns all key codes pygame knows about, sorted. Since pygame 2 the codes
+#  are sparse (SDL2 puts arrows, modifiers and other special keys above 2 ** 30),
+#  so they can no longer be enumerated with range(len(pygame.key.get_pressed())).
+
+def all_pygame_key_codes():
+  return sorted(set(
+    value for name, value in vars(pygame).items()
+    if name.startswith("K_") and isinstance(value,int)))
+
 #==============================================================================
 
 class Profiler(object):
@@ -2273,10 +2297,9 @@ class PlayerKeyMaps(StringSerializable):
     self.last_mouse_update_frame = -1
     
     
-    self.name_code_mapping = {}     # holds a mapping of key names to pygame key codes, since pygame itself offers no such functionality   
-    keys_pressed = pygame.key.get_pressed()
+    self.name_code_mapping = {}     # holds a mapping of key names to pygame key codes
     
-    for key_code in range(len(keys_pressed)):
+    for key_code in all_pygame_key_codes():
       self.name_code_mapping[pygame.key.name(key_code)] = key_code
      
     self.typed_string_buffer = [" " for i in range(PlayerKeyMaps.TYPED_STRING_BUFFER_LENGTH)]
@@ -2333,17 +2356,17 @@ class PlayerKeyMaps(StringSerializable):
       self.last_mouse_update_frame = frame_number
 
     for pygame_event in pygame_events:
-      if pygame_event.type == pygame.MOUSEBUTTONDOWN:
-        if pygame_event.button == 4:
+      if pygame_event.type == pygame.MOUSEWHEEL:   # since pygame 2 the wheel is its own event, not mouse buttons 4 and 5
+        if pygame_event.y > 0:
           self.mouse_button_states[3] = True
-        elif pygame_event.button == 5:
+        elif pygame_event.y < 0:
           self.mouse_button_states[4] = True
       elif pygame_event.type == pygame.KEYDOWN:
-        try:
+        typed_character = pygame_event.unicode   # key codes are no longer character codes, the event carries the character
+        
+        if len(typed_character) > 0:
           self.typed_string_buffer = self.typed_string_buffer[1:]
-          self.typed_string_buffer.append(chr(pygame_event.key))
-        except Exception:
-          debug_log("couldn't append typed character to the buffer")
+          self.typed_string_buffer.append(typed_character)
 
   #----------------------------------------------------------------------------
         
@@ -2409,7 +2432,7 @@ class PlayerKeyMaps(StringSerializable):
     else:
       result = pygame.key.name(key)
     
-      if result == "unknown key":
+      if result in ("","unknown key"):   # pygame 2 returns an empty string for unnamed keys, pygame 1.9 returned "unknown key"
         result = str(key)
     
     return result   
@@ -3281,6 +3304,12 @@ class ControlsMenu(Menu):
 
   #----------------------------------------------------------------------------
 
+  ## Keys that only toggle a state and must not be captured as a key mapping.
+  
+  NON_BINDABLE_KEYS = (pygame.K_NUMLOCKCLEAR,pygame.K_CAPSLOCK,pygame.K_SCROLLLOCK,pygame.K_MODE)
+
+  #----------------------------------------------------------------------------
+
   def __init__(self, sound_player, player_key_maps, game):
     super(ControlsMenu,self).__init__(sound_player)
     self.player_key_maps = player_key_maps
@@ -3334,7 +3363,7 @@ class ControlsMenu(Menu):
 
   def update(self, player_key_maps):
     if self.waiting_for_key != None:
-      keys_pressed = list(pygame.key.get_pressed()) 
+      keys_pressed = pygame.key.get_pressed()   # must not be turned into a plain list, it is indexed by scancode underneath
       
       key_pressed = None
       
@@ -3343,9 +3372,9 @@ class ControlsMenu(Menu):
       if len(mouse_actions) > 0:
         key_pressed = mouse_actions[0]
         
-      for i in range(len(keys_pressed)):      # find pressed key
-        if not (i in (pygame.K_NUMLOCK,pygame.K_CAPSLOCK,pygame.K_SCROLLOCK,322)) and keys_pressed[i]:
-          key_pressed = i
+      for key_code in all_pygame_key_codes():      # find pressed key
+        if not (key_code in ControlsMenu.NON_BINDABLE_KEYS) and keys_pressed[key_code]:
+          key_pressed = key_code
           break
         
       if self.wait_for_release:
@@ -5204,6 +5233,8 @@ class Game(object):
   #----------------------------------------------------------------------------
   
   def __init__(self):
+    check_pygame_version()
+    
     pygame.mixer.pre_init(22050,-16,2,512)   # set smaller audio buffer size to prevent audio lag
     pygame.init()
     pygame.font.init()
