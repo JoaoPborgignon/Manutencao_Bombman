@@ -246,6 +246,41 @@ for i in range(50):
 assertion("map state = STATE_GAME_OVER",test_map.get_state() == bombman.GameMap.STATE_GAME_OVER)
 assertion("map winning team = 3",test_map.get_winner_team() == 3)
 
+#       ================
+#       test time limit
+#       ================
+
+print("setting time limit: increase from no limit, then decrease twice (wraps around)")
+test_play_setup = bombman.PlaySetup()
+assertion("time limit = 0 by default",test_play_setup.get_time_limit() == 0)
+test_play_setup.increase_time_limit()
+assertion("time limit = 60",test_play_setup.get_time_limit() == 60)
+test_play_setup.decrease_time_limit()
+test_play_setup.decrease_time_limit()
+assertion("time limit = last option",test_play_setup.get_time_limit() == bombman.PlaySetup.TIME_LIMIT_OPTIONS[-1])
+
+assertion("map without time limit has no time left",test_map.get_time_left() == None)
+
+test_play_setup.set_time_limit(60)
+test_map = bombman.GameMap(map_data,test_play_setup,0,0)
+assertion("time left = limit + start delay before start",test_map.get_time_left() == 60000 + bombman.GameMap.START_GAME_AFTER)
+
+print("playing until the time runs out")
+
+for i in range((bombman.GameMap.START_GAME_AFTER + 60000) // 100 - 1):
+  test_map.update(100)
+
+assertion("map state = STATE_PLAYING right before time is up",test_map.get_state() == bombman.GameMap.STATE_PLAYING)
+test_map.update(100)
+assertion("time is up",test_map.time_is_up())
+assertion("map state = STATE_FINISHING after time is up",test_map.get_state() == bombman.GameMap.STATE_FINISHING)
+
+for i in range(60):
+  test_map.update(100)
+
+assertion("map state = STATE_GAME_OVER",test_map.get_state() == bombman.GameMap.STATE_GAME_OVER)
+assertion("time up = draw",test_map.get_winner_team() == -1)
+
 #       =================
 #       test other things
 #       =================
