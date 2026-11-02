@@ -89,6 +89,30 @@ def debug_log(message):
   if DEBUG_VERBOSE:      
     print(message)
 
+#------------------------------------------------------------------------------
+
+MINIMUM_PYGAME_VERSION = (2,0,0)
+
+## Exits with a readable message if the installed pygame is too old for the
+#  APIs used here (SDL2 event types, sparse key codes).
+
+def check_pygame_version():
+  if tuple(pygame.version.vernum)[:3] < MINIMUM_PYGAME_VERSION:
+    sys.exit(
+      "Bombman needs pygame " + ".".join(str(number) for number in MINIMUM_PYGAME_VERSION) +
+      " or newer (found " + pygame.version.ver + "), install the dependencies with: pip install -r requirements.txt")
+
+#------------------------------------------------------------------------------
+
+## Returns all key codes pygame knows about, sorted. Since pygame 2 the codes
+#  are sparse (SDL2 puts arrows, modifiers and other special keys above 2 ** 30),
+#  so they can no longer be enumerated with range(len(pygame.key.get_pressed())).
+
+def all_pygame_key_codes():
+  return sorted(set(
+    value for name, value in vars(pygame).items()
+    if name.startswith("K_") and isinstance(value,int)))
+
 #==============================================================================
 
 class Profiler(object):
@@ -159,6 +183,10 @@ class Profiler(object):
 
 class Positionable(object):
 
+  ## How close (in tile units) to a tile's center an object must be to count as centered.
+
+  TILE_CENTER_TOLERANCE = 0.2
+
   #----------------------------------------------------------------------------
 
   def __init__(self):
@@ -217,13 +245,6 @@ class Positionable(object):
     return (int(math.floor(position[0])),int(math.floor(position[1])))
 
   #----------------------------------------------------------------------------
- #Refactor 1: Mudança na antiga classe is_near_tile_center 
-
- class Positionable(object):
-  ## How close (in tile units) to a tile's center an object must be to count as centered.
-  TILE_CENTER_TOLERANCE = 0.2
-
-  ...
 
   def is_near_tile_center(self):
     position_within_tile = (self.position[0] % 1, self.position[1] % 1)
@@ -586,25 +607,43 @@ class Player(Positionable):
     elif item == GameMap.ITEM_DISEASE:
       sound_to_make = self.__apply_disease(game_map)
     
-#refactor 3: Mudança de emaranhado de IFs  no elif item_disease
-      def __pick_random_disease(self):
+    if game_map != None and sound_to_make != None:
+      game_map.add_sound_event(sound_to_make)
+
+  #----------------------------------------------------------------------------
+
+  ## Picks a random disease as a (disease, sound event) pair.
+
+  def __pick_random_disease(self):
     return random.choice([
-      (Player.DISEASE_SHORT_FLAME, SoundPlayer.SOUND_EVENT_DISEASE),
-      # ... demais doencas, como no original
+      (Player.DISEASE_SHORT_FLAME,SoundPlayer.SOUND_EVENT_DISEASE),
+      (Player.DISEASE_SLOW,SoundPlayer.SOUND_EVENT_SLOW),
+      (Player.DISEASE_DIARRHEA,SoundPlayer.SOUND_EVENT_DIARRHEA),
+      (Player.DISEASE_FAST_BOMB,SoundPlayer.SOUND_EVENT_DISEASE),
+      (Player.DISEASE_REVERSE_CONTROLS,SoundPlayer.SOUND_EVENT_DISEASE),
+      (Player.DISEASE_SWITCH_PLAYERS,SoundPlayer.SOUND_EVENT_DISEASE),
+      (Player.DISEASE_NO_BOMB,SoundPlayer.SOUND_EVENT_DISEASE),
+      (Player.DISEASE_EARTHQUAKE,SoundPlayer.SOUND_EVENT_EARTHQUAKE)
       ])
+
+  #----------------------------------------------------------------------------
+
+  ## Swaps this player's position with that of another living player.
 
   def __swap_position_with_random_player(self, game_map):
     players = list(filter(lambda p: not p.is_dead(), game_map.get_players()))
 
     player_to_switch = self
 
-    if len(players) > 1:
+    if len(players) > 1:     # should always be true
       while player_to_switch == self:
         player_to_switch = random.choice(players)
 
     my_position = self.get_position()
     self.set_position(player_to_switch.get_position())
     player_to_switch.set_position(my_position)
+
+  #----------------------------------------------------------------------------
 
   ## Applies a random disease to the player. Returns the sound event to play.
 
@@ -622,31 +661,6 @@ class Player(Positionable):
       self.disease_time_left = Player.DISEASE_TIME
 
     return sound
-      
-      if chosen_disease[0] == Player.DISEASE_SWITCH_PLAYERS:
-        if game_map != None:
-          players = list(filter(lambda p: not p.is_dead(), game_map.get_players()))
-          
-          player_to_switch = self
-          
-          if len(players) > 1:     # should always be true
-            while player_to_switch == self:
-              player_to_switch = random.choice(players)
-          
-          my_position = self.get_position()
-          self.set_position(player_to_switch.get_position())
-          player_to_switch.set_position(my_position)
-      elif chosen_disease[0] == Player.DISEASE_EARTHQUAKE:
-        if game_map != None:
-          game_map.start_earthquake()
-      else:
-        self.disease = chosen_disease[0]
-        self.disease_time_left = Player.DISEASE_TIME
-    
-      sound_to_make = chosen_disease[1]
-    
-    if game_map != None and sound_to_make != None:
-      game_map.add_sound_event(sound_to_make)
 
   #----------------------------------------------------------------------------
     
@@ -916,10 +930,7 @@ class Player(Positionable):
 
   #----------------------------------------------------------------------------
 
-  ## Sets the state and other attributes like position etc. of this player accoording to a list of input action (returned by PlayerKeyMaps.get_current_actions()).
- 
- #Refactor 4: melhoria no react_to_inputs
-   ## Advances a jump/teleport transition. Returns True if the player is still
+  ## Advances a jump/teleport transition. Returns True if the player is still
   #  mid-transition and should not react to inputs this frame.
 
   def __update_transition_state(self, dt):
@@ -938,13 +949,16 @@ class Player(Positionable):
     self.teleporting_to = None
     return False
 
+  #----------------------------------------------------------------------------
+
+  ## Sets the state and other attributes like position etc. of this player accoording to a list of input action (returned by PlayerKeyMaps.get_current_actions()).
+
   def react_to_inputs(self, input_actions, dt, game_map):
     if self.state == Player.STATE_DEAD or game_map.get_state() == GameMap.STATE_WAITING_TO_PLAY:
       return
 
     if self.__update_transition_state(dt):
       return
-    ...
 
     current_speed = self.speed if self.disease != Player.DISEASE_SLOW else Player.SLOW_SPEED
     
@@ -2316,10 +2330,9 @@ class PlayerKeyMaps(StringSerializable):
     self.last_mouse_update_frame = -1
     
     
-    self.name_code_mapping = {}     # holds a mapping of key names to pygame key codes, since pygame itself offers no such functionality   
-    keys_pressed = pygame.key.get_pressed()
+    self.name_code_mapping = {}     # holds a mapping of key names to pygame key codes
     
-    for key_code in range(len(keys_pressed)):
+    for key_code in all_pygame_key_codes():
       self.name_code_mapping[pygame.key.name(key_code)] = key_code
      
     self.typed_string_buffer = [" " for i in range(PlayerKeyMaps.TYPED_STRING_BUFFER_LENGTH)]
@@ -2376,17 +2389,17 @@ class PlayerKeyMaps(StringSerializable):
       self.last_mouse_update_frame = frame_number
 
     for pygame_event in pygame_events:
-      if pygame_event.type == pygame.MOUSEBUTTONDOWN:
-        if pygame_event.button == 4:
+      if pygame_event.type == pygame.MOUSEWHEEL:   # since pygame 2 the wheel is its own event, not mouse buttons 4 and 5
+        if pygame_event.y > 0:
           self.mouse_button_states[3] = True
-        elif pygame_event.button == 5:
+        elif pygame_event.y < 0:
           self.mouse_button_states[4] = True
       elif pygame_event.type == pygame.KEYDOWN:
-        try:
+        typed_character = pygame_event.unicode   # key codes are no longer character codes, the event carries the character
+        
+        if len(typed_character) > 0:
           self.typed_string_buffer = self.typed_string_buffer[1:]
-          self.typed_string_buffer.append(chr(pygame_event.key))
-        except Exception:
-          debug_log("couldn't append typed character to the buffer")
+          self.typed_string_buffer.append(typed_character)
 
   #----------------------------------------------------------------------------
         
@@ -2452,7 +2465,7 @@ class PlayerKeyMaps(StringSerializable):
     else:
       result = pygame.key.name(key)
     
-      if result == "unknown key":
+      if result in ("","unknown key"):   # pygame 2 returns an empty string for unnamed keys, pygame 1.9 returned "unknown key"
         result = str(key)
     
     return result   
@@ -3324,6 +3337,12 @@ class ControlsMenu(Menu):
 
   #----------------------------------------------------------------------------
 
+  ## Keys that only toggle a state and must not be captured as a key mapping.
+  
+  NON_BINDABLE_KEYS = (pygame.K_NUMLOCKCLEAR,pygame.K_CAPSLOCK,pygame.K_SCROLLLOCK,pygame.K_MODE)
+
+  #----------------------------------------------------------------------------
+
   def __init__(self, sound_player, player_key_maps, game):
     super(ControlsMenu,self).__init__(sound_player)
     self.player_key_maps = player_key_maps
@@ -3377,7 +3396,7 @@ class ControlsMenu(Menu):
 
   def update(self, player_key_maps):
     if self.waiting_for_key != None:
-      keys_pressed = list(pygame.key.get_pressed()) 
+      keys_pressed = pygame.key.get_pressed()   # must not be turned into a plain list, it is indexed by scancode underneath
       
       key_pressed = None
       
@@ -3386,9 +3405,9 @@ class ControlsMenu(Menu):
       if len(mouse_actions) > 0:
         key_pressed = mouse_actions[0]
         
-      for i in range(len(keys_pressed)):      # find pressed key
-        if not (i in (pygame.K_NUMLOCK,pygame.K_CAPSLOCK,pygame.K_SCROLLOCK,322)) and keys_pressed[i]:
-          key_pressed = i
+      for key_code in all_pygame_key_codes():      # find pressed key
+        if not (key_code in ControlsMenu.NON_BINDABLE_KEYS) and keys_pressed[key_code]:
+          key_pressed = key_code
           break
         
       if self.wait_for_release:
@@ -5247,6 +5266,8 @@ class Game(object):
   #----------------------------------------------------------------------------
   
   def __init__(self):
+    check_pygame_version()
+    
     pygame.mixer.pre_init(22050,-16,2,512)   # set smaller audio buffer size to prevent audio lag
     pygame.init()
     pygame.font.init()
