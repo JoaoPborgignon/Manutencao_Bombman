@@ -241,15 +241,21 @@ class Positionable(object):
     return (int(math.floor(position[0])),int(math.floor(position[1])))
 
   #----------------------------------------------------------------------------
-  
-  def is_near_tile_center(self):
-    position_within_tile = (self.position[0] % 1,self.position[1] % 1)
-    
-    limit = 0.2
-    limit2 = 1.0 - limit
-    
-    return (limit < position_within_tile[0] < limit2) and (limit < position_within_tile[1] < limit2)
+ #Refactor 1: Mudança na antiga classe is_near_tile_center 
 
+ class Positionable(object):
+  ## How close (in tile units) to a tile's center an object must be to count as centered.
+  TILE_CENTER_TOLERANCE = 0.2
+
+  ...
+
+  def is_near_tile_center(self):
+    position_within_tile = (self.position[0] % 1, self.position[1] % 1)
+
+    lower = Positionable.TILE_CENTER_TOLERANCE
+    upper = 1.0 - lower
+
+    return (lower < position_within_tile[0] < upper) and (lower < position_within_tile[1] < upper)
 #==============================================================================
 
 class Player(Positionable):
@@ -508,11 +514,7 @@ class Player(Positionable):
     
     self.state_time = 0
 
-  #----------------------------------------------------------------------------
-
-  def get_state_time(self):
-    return self.state_time
-
+  #refactor 2: Removido get_state_time morto
   #----------------------------------------------------------------------------
 
   def get_teleport_destination(self):
@@ -606,16 +608,44 @@ class Player(Positionable):
     elif item == GameMap.ITEM_THROWING_GLOVE:
       self.has_throwing_glove = True
     elif item == GameMap.ITEM_DISEASE:
-      chosen_disease = random.choice([
-        (Player.DISEASE_SHORT_FLAME,SoundPlayer.SOUND_EVENT_DISEASE),     
-        (Player.DISEASE_SLOW,SoundPlayer.SOUND_EVENT_SLOW),
-        (Player.DISEASE_DIARRHEA,SoundPlayer.SOUND_EVENT_DIARRHEA),
-        (Player.DISEASE_FAST_BOMB,SoundPlayer.SOUND_EVENT_DISEASE),
-        (Player.DISEASE_REVERSE_CONTROLS,SoundPlayer.SOUND_EVENT_DISEASE),
-        (Player.DISEASE_SWITCH_PLAYERS,SoundPlayer.SOUND_EVENT_DISEASE),
-        (Player.DISEASE_NO_BOMB,SoundPlayer.SOUND_EVENT_DISEASE),
-        (Player.DISEASE_EARTHQUAKE,SoundPlayer.SOUND_EVENT_EARTHQUAKE)
-        ])
+      sound_to_make = self.__apply_disease(game_map)
+    
+#refactor 3: Mudança de emaranhado de IFs  no elif item_disease
+      def __pick_random_disease(self):
+    return random.choice([
+      (Player.DISEASE_SHORT_FLAME, SoundPlayer.SOUND_EVENT_DISEASE),
+      # ... demais doencas, como no original
+      ])
+
+  def __swap_position_with_random_player(self, game_map):
+    players = list(filter(lambda p: not p.is_dead(), game_map.get_players()))
+
+    player_to_switch = self
+
+    if len(players) > 1:
+      while player_to_switch == self:
+        player_to_switch = random.choice(players)
+
+    my_position = self.get_position()
+    self.set_position(player_to_switch.get_position())
+    player_to_switch.set_position(my_position)
+
+  ## Applies a random disease to the player. Returns the sound event to play.
+
+  def __apply_disease(self, game_map):
+    disease, sound = self.__pick_random_disease()
+
+    if disease == Player.DISEASE_SWITCH_PLAYERS:
+      if game_map != None:
+        self.__swap_position_with_random_player(game_map)
+    elif disease == Player.DISEASE_EARTHQUAKE:
+      if game_map != None:
+        game_map.start_earthquake()
+    else:
+      self.disease = disease
+      self.disease_time_left = Player.DISEASE_TIME
+
+    return sound
       
       if chosen_disease[0] == Player.DISEASE_SWITCH_PLAYERS:
         if game_map != None:
@@ -911,21 +941,34 @@ class Player(Positionable):
   #----------------------------------------------------------------------------
 
   ## Sets the state and other attributes like position etc. of this player accoording to a list of input action (returned by PlayerKeyMaps.get_current_actions()).
+ 
+ #Refactor 4: melhoria no react_to_inputs
+   ## Advances a jump/teleport transition. Returns True if the player is still
+  #  mid-transition and should not react to inputs this frame.
+
+  def __update_transition_state(self, dt):
+    if self.state not in (Player.STATE_IN_AIR, Player.STATE_TELEPORTING):
+      return False
+
+    self.state_time += dt
+    duration = Player.JUMP_DURATION if self.state == Player.STATE_IN_AIR else Player.TELEPORT_DURATION
+
+    if self.state_time < duration:
+      return True
+
+    self.state = self.state_backup
+    self.state_time = 0
+    self.jumping_to = None
+    self.teleporting_to = None
+    return False
 
   def react_to_inputs(self, input_actions, dt, game_map):
     if self.state == Player.STATE_DEAD or game_map.get_state() == GameMap.STATE_WAITING_TO_PLAY:
       return
-    
-    if self.state in [Player.STATE_IN_AIR,Player.STATE_TELEPORTING]:
-      self.state_time += dt
 
-      if self.state_time >= (Player.JUMP_DURATION if self.state == Player.STATE_IN_AIR else Player.TELEPORT_DURATION):
-        self.state = self.state_backup
-        self.state_time = 0
-        self.jumping_to = None
-        self.teleporting_to = None
-      else:
-        return 
+    if self.__update_transition_state(dt):
+      return
+    ...
 
     current_speed = self.speed if self.disease != Player.DISEASE_SLOW else Player.SLOW_SPEED
     
