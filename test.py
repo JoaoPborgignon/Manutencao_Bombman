@@ -300,6 +300,49 @@ main_menu = bombman.MainMenu(game.sound_player)
 
 main_menu.process_inputs([])     # needed
 
+print("test pause menu restart option")
+
+pause_menu = bombman.PlayMenu(game.sound_player)
+
+assertion(
+    "pause menu has resume, restart and main menu options",
+    pause_menu.get_items()[0] == ("resume","restart game","to main menu")
+)
+
+pause_menu.selected_item = (1,0)
+
+pause_menu.action_pressed(bombman.PlayerKeyMaps.ACTION_BOMB)
+
+assertion(
+    "restart option asks for confirmation",
+    pause_menu.get_state() == bombman.Menu.MENU_STATE_CONFIRM_PROMPT
+)
+
+print("test random map selection")
+
+map_select_menu = bombman.MapSelectMenu(game.sound_player)
+
+map_count = len(map_select_menu.map_filenames)
+
+randomized_map_names = [
+    map_select_menu.get_random_map_name()
+    for i in range(map_count)
+]
+
+assertion(
+    "random selection uses every map before repeating",
+    map_count > 1 and len(set(randomized_map_names)) == map_count
+)
+
+next_random_map = map_select_menu.get_random_map_name(
+    randomized_map_names[-1]
+)
+
+assertion(
+    "random selection avoids repetition when the list is renewed",
+    next_random_map != randomized_map_names[-1]
+)
+
 print("press down and right")
 actions = [(0,bombman.PlayerKeyMaps.ACTION_DOWN),(0,bombman.PlayerKeyMaps.ACTION_RIGHT)]
 main_menu.process_inputs(actions)
