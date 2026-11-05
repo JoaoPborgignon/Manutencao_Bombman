@@ -316,6 +316,22 @@ actions = [(0,bombman.PlayerKeyMaps.ACTION_BOMB)]
 main_menu.process_inputs(actions)
 assertion("menu state = MENU_STATE_CONFIRM",main_menu.get_state() == bombman.Menu.MENU_STATE_CONFIRM)
 
+print("results screen: tie between teams 2 and 3, team 3 has two players")
+results_players = test_map.get_players()
+for result_player, team, wins in zip(results_players,(2,3,3,0),(1,1,1,0)):
+  result_player.set_team_number(team)
+  result_player.set_wins(wins)
+
+result_menu = bombman.ResultMenu(game.sound_player)
+result_menu.set_results(results_players)
+assertion("tie announces both teams",result_menu.get_text().startswith("Winners teams are: "))
+assertion("each winning team listed once",result_menu.get_text().split("\n")[0].count(bombman.Game.COLOR_NAMES[3]) == 1)
+
+print("results screen: single team with two players")
+results_players[0].set_wins(0)
+result_menu.set_results(results_players)
+assertion("single winning team announced",result_menu.get_text().startswith("Winner team is "))
+
 print("init key map")
 key_maps = bombman.PlayerKeyMaps()
 
