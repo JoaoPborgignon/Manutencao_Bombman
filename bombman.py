@@ -3230,13 +3230,14 @@ class PlayMenu(Menu):
 
   def __init__(self,sound_player):
     super(PlayMenu,self).__init__(sound_player)
-    self.items = [("resume","to main menu")]
+    self.items = [("resume","restart game","to main menu")]
 
   #----------------------------------------------------------------------------
-  
+
   def action_pressed(self, action):
     super(PlayMenu,self).action_pressed(action)
     self.prompt_if_needed((1,0))
+    self.prompt_if_needed((2,0))
 
 #==============================================================================
       
@@ -3576,12 +3577,14 @@ class MapSelectMenu(Menu):
     super(MapSelectMenu,self).__init__(sound_player)
     self.text = "Now select a map."
     self.map_filenames = []
+    self.random_map_bag = []
     self.update_items()
 
   #----------------------------------------------------------------------------
     
   def update_items(self):
     self.map_filenames = sorted([filename for filename in os.listdir(Game.MAP_PATH) if os.path.isfile(os.path.join(Game.MAP_PATH,filename))])
+    self.random_map_bag = []
 
     special_color = (100,100,255)
 
@@ -3602,21 +3605,31 @@ class MapSelectMenu(Menu):
 
   #----------------------------------------------------------------------------
     
-  def get_random_map_name(self):
-    return random.choice(self.map_filenames)
+  def get_random_map_name(self, previous_map_name=None):
+    if not self.map_filenames:
+      return None
+
+    if not self.random_map_bag:
+      self.random_map_bag = list(self.map_filenames)
+      random.shuffle(self.random_map_bag)
+
+      if len(self.random_map_bag) > 1 and self.random_map_bag[-1] == previous_map_name:
+        self.random_map_bag[-1], self.random_map_bag[0] = self.random_map_bag[0], self.random_map_bag[-1]
+
+    return self.random_map_bag.pop()
 
   #----------------------------------------------------------------------------
     
   def get_selected_map_name(self):
-    if self.selected_item[0] == 0:                # pick random
-      return random.choice(self.map_filenames)
-    
+    if self.selected_item[0] == 0:  # pick random
+      return self.get_random_map_name()
+
     try:
       index = self.selected_item[0] - 2
-      
+
       if index < 0:
         return ""
-      
+
       return self.map_filenames[index]
     except IndexError:
       return ""
@@ -5456,6 +5469,10 @@ class Game(object):
              
     self.map_name = ""
     self.random_map_selection = False
+    self.current_map_name = None
+    self.restart_current_game = False
+    self.round_start_kill_counts = [0 for i in range(10)]
+    self.round_start_win_counts = [0 for i in range(10)]
     self.game_map = None
     
     self.play_setup = PlaySetup()
@@ -5583,7 +5600,7 @@ class Game(object):
           Game.STATE_EXIT
           ] [self.active_menu.get_selected_item()[0]]
 
-    # ================ PLAY MENU =================
+       # ================ PLAY MENU =================
     elif self.state == Game.STATE_MENU_PLAY:
       self.active_menu = self.menu_play
 
@@ -5593,15 +5610,19 @@ class Game(object):
       elif self.active_menu.get_state() == Menu.MENU_STATE_CONFIRM:
         if self.active_menu.get_selected_item() == (0,0):
           new_state = Game.STATE_PLAYING
-          
+
           for player in self.game_map.get_players():
             player.wait_for_bomb_action_release()
-          
+
         elif self.active_menu.get_selected_item() == (1,0):
+          self.restart_current_game = True
+          new_state = Game.STATE_GAME_STARTED
+
+        elif self.active_menu.get_selected_item() == (2,0):
           new_state = Game.STATE_MENU_MAIN
           self.sound_player.change_music()
           self.deactivate_all_cheats()
-    
+
     # ============== SETTINGS MENU ===============
     elif self.state == Game.STATE_MENU_SETTINGS: 
       self.active_menu = self.menu_settings
@@ -5734,25 +5755,42 @@ class Game(object):
             self.deactivate_all_cheats()
           else:
             self.state = Game.STATE_GAME_STARTED   # new game
+      
       elif self.state == Game.STATE_GAME_STARTED:
         debug_log("starting game " + str(self.game_number))
-    
-        previous_winner = -1
-    
-        if self.game_number != 1:
-          previous_winner = self.game_map.get_winner_team()
-        
-        kill_counts = [0 for i in range(10)]
-        win_counts = [0 for i in range(10)]
-        
-        if self.game_map != None:
-          for player in self.game_map.get_players():
-            kill_counts[player.get_number()] = player.get_kills()
-            win_counts[player.get_number()] = player.get_wins()
-        
-        map_name_to_load = self.map_name if not self.random_map_selection else self.menu_map_select.get_random_map_name()
-        
-        with open(os.path.join(Game.MAP_PATH,map_name_to_load)) as map_file:
+
+        restart_current_game = self.restart_current_game
+
+        if restart_current_game:
+          # Restore the statistics saved at the beginning of this round.
+          previous_winner = -1
+          kill_counts = self.round_start_kill_counts[:]
+          win_counts = self.round_start_win_counts[:]
+          self.restart_current_game = False
+        else:
+          previous_winner = -1
+
+          if self.game_number != 1 and self.game_map is not None:
+            previous_winner = self.game_map.get_winner_team()
+
+          kill_counts = [0 for i in range(10)]
+          win_counts = [0 for i in range(10)]
+
+          if self.game_map is not None:
+            for player in self.game_map.get_players():
+              kill_counts[player.get_number()] = player.get_kills()
+              win_counts[player.get_number()] = player.get_wins()
+
+        if restart_current_game:
+          map_name_to_load = self.current_map_name
+        elif self.random_map_selection:
+          map_name_to_load = self.menu_map_select.get_random_map_name(self.current_map_name)
+        else:
+          map_name_to_load = self.map_name
+
+        self.current_map_name = map_name_to_load
+
+        with open(os.path.join(Game.MAP_PATH, map_name_to_load)) as map_file:
           map_data = map_file.read()
           self.game_map = GameMap(
               map_data,
@@ -5760,37 +5798,46 @@ class Game(object):
               RoundInfo(self.game_number, self.play_setup.get_number_of_games()),
               self.cheat_is_active(Game.CHEAT_ALL_ITEMS)
           )
-          
+
         player_slots = self.play_setup.get_slots()
-        
+
         if self.cheat_is_active(Game.CHEAT_PLAYER_IMMORTAL):
           self.immortal_players_numbers = []
-          
+
           for i in range(len(player_slots)):
-            if player_slots[i] != None and player_slots[i][0] >= 0:   # cheat: if not AI
-              self.immortal_players_numbers.append(i)                 # make the player immortal
-        
+            if player_slots[i] != None and player_slots[i][0] >= 0:
+              self.immortal_players_numbers.append(i)
+
         self.ais = []
-        
+
         for i in range(len(player_slots)):
-          if player_slots[i] != None and player_slots[i][0] < 0:  # indicates AI
-            self.ais.append(AI(self.game_map.get_players_by_numbers()[i],self.game_map))
-      
+          if player_slots[i] != None and player_slots[i][0] < 0:
+            self.ais.append(AI(self.game_map.get_players_by_numbers()[i], self.game_map))
+
         for player in self.game_map.get_players():
           player.set_kills(kill_counts[player.get_number()])
           player.set_wins(win_counts[player.get_number()])
-        
-        self.acknowledge_wins(previous_winner,self.game_map.get_players())    # add win counts
-        
+
+        self.acknowledge_wins(previous_winner, self.game_map.get_players())
+
+        # Save the scores at the beginning of this round.
+        self.round_start_kill_counts = [0 for i in range(10)]
+        self.round_start_win_counts = [0 for i in range(10)]
+
+        for player in self.game_map.get_players():
+          player_number = player.get_number()
+          self.round_start_kill_counts[player_number] = player.get_kills()
+          self.round_start_win_counts[player_number] = player.get_wins()
+
         self.sound_player.change_music()
         self.state = Game.STATE_PLAYING
       elif self.state == Game.STATE_EXIT:
         break
       else:   # in menu
         self.manage_menus()
-        
+
         profiler.measure_start("menu rend.")
-        self.screen.blit(self.renderer.render_menu(self.active_menu,self),(0,0))  
+        self.screen.blit(self.renderer.render_menu(self.active_menu, self), (0, 0))
         profiler.measure_stop("menu rend.")
 
       pygame.display.flip()
