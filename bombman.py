@@ -2938,6 +2938,7 @@ class Menu(object):
   
   def __init__(self,sound_player):
     self.text = ""
+    self.text_as_table = False            ##< whether the text is a tabulator separated table
     self.selected_item = (0,0)            ##< row, column
     self.items = []                       ##< list (rows) of lists (column)
     self.menu_left = False
@@ -2976,6 +2977,13 @@ class Menu(object):
     
   def get_text(self):
     return self.text
+
+  #----------------------------------------------------------------------------
+
+  ## Says whether the menu text should be laid out as a table.
+
+  def text_is_table(self):
+    return self.text_as_table
 
   #----------------------------------------------------------------------------
   
@@ -3129,6 +3137,7 @@ class MainMenu(Menu):
     self.items = [(
       "let's play!",
       "tweak some stuff",
+      "how to play",
       "what's this about",
       "run away!")]
 
@@ -3136,7 +3145,7 @@ class MainMenu(Menu):
     
   def action_pressed(self, action):
     super(MainMenu,self).action_pressed(action)
-    self.prompt_if_needed((3,0))
+    self.prompt_if_needed((4,0))
 
 #==============================================================================
 
@@ -3458,6 +3467,94 @@ class ControlsMenu(Menu):
 
 #==============================================================================
         
+class TutorialMenu(Menu):
+
+  #----------------------------------------------------------------------------
+
+  ## Player actions listed in the tutorial, in the order they are shown, along
+  #  with the description of what each of them does.
+
+  TUTORIAL_ACTIONS = (
+    (PlayerKeyMaps.ACTION_UP,"move up"),
+    (PlayerKeyMaps.ACTION_LEFT,"move left"),
+    (PlayerKeyMaps.ACTION_DOWN,"move down"),
+    (PlayerKeyMaps.ACTION_RIGHT,"move right"),
+    (PlayerKeyMaps.ACTION_BOMB,"put a bomb"),
+    (PlayerKeyMaps.ACTION_SPECIAL,"special"))
+
+  ## One color per player column, so that the columns can be told apart.
+
+  PLAYER_COLORS = ("^#38A8F2","^#4EF259","^#F2E34E","^#F25E9C")
+
+  LABEL_COLOR = "^#FFFFFF"
+
+  #----------------------------------------------------------------------------
+
+  def __init__(self,sound_player,player_key_maps):
+    super(TutorialMenu,self).__init__(sound_player)
+    self.player_key_maps = player_key_maps
+    self.text_as_table = True
+    self.items = [["back to menu"]]
+    self.update_text()
+
+  #----------------------------------------------------------------------------
+
+  ## Draws a key as a key cap, e.g. "[ W ]". Mouse controls, which are named
+  #  "m up", "m L" and so on, get spelled out so that they can be told apart.
+
+  @staticmethod
+  def key_symbol(key):
+    key_string = PlayerKeyMaps.key_to_string(key)
+
+    if key_string.startswith("m "):
+      key_string = "mouse " + key_string[2:]
+
+    return "[ " + key_string.upper() + " ]"
+
+  #----------------------------------------------------------------------------
+
+  ## Builds the table header, one column per player.
+
+  def header_line(self):
+    result = TutorialMenu.LABEL_COLOR + "what it does"
+
+    for i in range(Game.NUMBER_OF_CONTROLLED_PLAYERS):
+      result += "\t" + TutorialMenu.PLAYER_COLORS[i] + "player " + str(i + 1)
+
+    return result
+
+  #----------------------------------------------------------------------------
+
+  ## Builds one table row: an action and the key each player presses for it.
+
+  def action_line(self, action, action_description):
+    result = TutorialMenu.LABEL_COLOR + action_description
+
+    for i in range(Game.NUMBER_OF_CONTROLLED_PLAYERS):
+      player_maps = self.player_key_maps.get_players_key_mapping(i)
+      result += "\t" + TutorialMenu.PLAYER_COLORS[i] + TutorialMenu.key_symbol(player_maps[action])
+
+    return result
+
+  #----------------------------------------------------------------------------
+
+  ## Refreshes the text so that it always shows the current key mapping.
+
+  def update_text(self):
+    lines = [TutorialMenu.LABEL_COLOR + "up to 4 players on the same keyboard, each one with its own keys",
+             self.header_line()]
+
+    for action, action_description in TutorialMenu.TUTORIAL_ACTIONS:
+      lines.append(self.action_line(action,action_description))
+
+    lines.append("")
+    lines.append(TutorialMenu.LABEL_COLOR + "special = detonate or throw a bomb (needs the item)" +
+                 "   -   menu " + TutorialMenu.key_symbol(self.player_key_maps.get_menu_key_map()))
+
+    self.text = "\n".join(lines)
+
+#==============================================================================
+        
 class AboutMenu(Menu):
 
   #----------------------------------------------------------------------------
@@ -3650,6 +3747,7 @@ class Renderer(object):
   FONT_SMALL_SIZE = 12
   FONT_NORMAL_SIZE = 25
   MENU_LINE_SPACING = 10
+  MENU_COLUMN_SPACING = 20                ##< horizontal gap between the columns of a table text
   MENU_FONT_COLOR = (255,255,255)
   
   SCROLLBAR_RELATIVE_POSITION = (-200,-50)
@@ -4026,68 +4124,122 @@ class Renderer(object):
 
   ## Renders text with outline, line breaks, formatting, etc.
 
-  def render_text(self, font, text_to_render, color, outline_color = (0,0,0), center = False):
-    text_lines = text_to_render.split("\n")
-    rendered_lines = []
-    
-    width = height = 0
-    
-    first_line = True
-    
-    for text_line in text_lines:
-      line = text_line.lstrip().rstrip()
-      
-      if len(line) == 0:
+  ## Renders one line of text, including the ^#rrggbb markup, into a surface.
+
+  def render_line(self, font, line, color, outline_color):
+    line_without_format = re.sub(r"\^.......","",line)     # remove all the markup in format ^#dddddd
+
+    result = pygame.Surface(font.size(line_without_format),flags=pygame.SRCALPHA)
+
+    x = 0
+    first = True
+    starts_with_format = len(line) > 0 and line[0] == "^"
+
+    for subline in line.split("^"):
+      if len(subline) == 0:
         continue
-      
-      line_without_format = re.sub(r"\^.......","",line)     # remove all the markup in format ^#dddddd
 
-      new_rendered_line = pygame.Surface(font.size(line_without_format),flags=pygame.SRCALPHA)
-      
-      x = 0
-      first = True
-      starts_with_format = line[0] == "^"
- 
-      for subline in line.split("^"):
-        if len(subline) == 0:
-          continue
-        
-        has_format = starts_with_format if first else True
-        first = False
+      has_format = starts_with_format if first else True
+      first = False
 
-        text_color = color
-        
-        if has_format:
-          text_color = pygame.Color(subline[:7])
-          subline = subline[7:]
-        
-        new_rendered_subline = font.render(subline,True,outline_color)   # create text with outline
-        new_rendered_subline.blit(new_rendered_subline,(0,2))
-        new_rendered_subline.blit(new_rendered_subline,(1,0))
-        new_rendered_subline.blit(new_rendered_subline,(-1,0))
-        new_rendered_subline.blit(font.render(subline,True,text_color),(0,1))      
-        
-        new_rendered_line.blit(new_rendered_subline,(x,0))
-        
-        x += new_rendered_subline.get_size()[0]
-        
-      rendered_lines.append(new_rendered_line)
+      text_color = color
 
-      if not first_line:
-        height += Renderer.MENU_LINE_SPACING
-      
-      first_line = False
+      if has_format:
+        text_color = pygame.Color(subline[:7])
+        subline = subline[7:]
 
-      height += rendered_lines[-1].get_size()[1]
-      width = max(width,rendered_lines[-1].get_size()[0])
-    
-    result = pygame.Surface((width,height),flags=pygame.SRCALPHA)
-    
+      new_rendered_subline = font.render(subline,True,outline_color)   # create text with outline
+      new_rendered_subline.blit(new_rendered_subline,(0,2))
+      new_rendered_subline.blit(new_rendered_subline,(1,0))
+      new_rendered_subline.blit(new_rendered_subline,(-1,0))
+      new_rendered_subline.blit(font.render(subline,True,text_color),(0,1))
+
+      result.blit(new_rendered_subline,(x,0))
+
+      x += new_rendered_subline.get_size()[0]
+
+    return result
+
+  #----------------------------------------------------------------------------
+
+  ## Splits a text into lines of cells, dropping the empty lines that surround
+  #  it. Cells are separated by tabulators, a line without any tabulator is a
+  #  single cell line (and is centered over the whole text when rendered).
+
+  @staticmethod
+  def split_text_cells(text_to_render, table):
+    lines = [line.strip() for line in text_to_render.split("\n")]
+
+    while len(lines) > 0 and len(lines[0]) == 0:
+      lines.pop(0)
+
+    while len(lines) > 0 and len(lines[-1]) == 0:
+      lines.pop()
+
+    return [[cell.strip() for cell in line.split("\t")] if table else [line] for line in lines]
+
+  #----------------------------------------------------------------------------
+
+  ## Widths of the table columns, each including the spacing that follows it.
+  #  Single cell lines are not part of the column layout.
+
+  @staticmethod
+  def compute_column_widths(rendered_lines):
+    result = []
+
+    for rendered_cells in rendered_lines:
+      if len(rendered_cells) < 2:
+        continue
+
+      for i in range(len(rendered_cells)):
+        cell_width = rendered_cells[i].get_size()[0] + Renderer.MENU_COLUMN_SPACING
+
+        if i < len(result):
+          result[i] = max(result[i],cell_width)
+        else:
+          result.append(cell_width)
+
+    return result
+
+  #----------------------------------------------------------------------------
+
+  ## Renders a multiline text into a surface. Empty lines are kept as vertical
+  #  spacing. With table set to True the lines are split into columns by the
+  #  tabulator character and the columns are aligned with each other.
+
+  def render_text(self, font, text_to_render, color, outline_color = (0,0,0), center = False, table = False):
+    rendered_lines = [[self.render_line(font,cell,color,outline_color) for cell in line_cells]
+                      for line_cells in Renderer.split_text_cells(text_to_render,table)]
+
+    column_widths = Renderer.compute_column_widths(rendered_lines)
+    table_width = max(0,sum(column_widths) - Renderer.MENU_COLUMN_SPACING)
+
+    width = table_width
+
+    for rendered_cells in rendered_lines:
+      if len(rendered_cells) < 2:
+        width = max(width,rendered_cells[0].get_size()[0])
+
     y_step = font.get_height() + Renderer.MENU_LINE_SPACING
-    
+    height = max(0,len(rendered_lines) * y_step - Renderer.MENU_LINE_SPACING)
+
+    result = pygame.Surface((width,height),flags=pygame.SRCALPHA)
+
     for i in range(len(rendered_lines)):
-      result.blit(rendered_lines[i],(0 if not center else (width - rendered_lines[i].get_size()[0]) / 2,i * y_step))
-    
+      rendered_cells = rendered_lines[i]
+      y = i * y_step
+
+      if len(rendered_cells) < 2:                  # a whole line instead of a table row
+        center_line = center or table
+        result.blit(rendered_cells[0],((width - rendered_cells[0].get_size()[0]) // 2 if center_line else 0,y))
+        continue
+
+      x = (width - table_width) // 2
+
+      for j in range(len(rendered_cells)):
+        result.blit(rendered_cells[j],(x,y))
+        x += column_widths[j]
+
     return result
 
   #----------------------------------------------------------------------------
@@ -4118,9 +4270,11 @@ class Renderer(object):
       if menu_coordinates == 0:
         item_text = menu.get_text()
         center_text = True
+        table_text = menu.text_is_table()
       else:
         item_text = items[menu_coordinates[0]][menu_coordinates[1]]
         center_text = False
+        table_text = False
       
       if not update_needed and item_text != self.menu_item_images[menu_coordinates][0]:
         update_needed = True        
@@ -4128,7 +4282,7 @@ class Renderer(object):
       if update_needed:
         debug_log("updating menu item " + str(menu_coordinates))
           
-        new_image = self.render_text(self.font_normal,item_text,Renderer.MENU_FONT_COLOR,center = center_text)
+        new_image = self.render_text(self.font_normal,item_text,Renderer.MENU_FONT_COLOR,center = center_text,table = table_text)
           
         # text itself
         new_image.blit(new_image,(0,1))
@@ -5250,6 +5404,7 @@ class Game(object):
   STATE_MENU_PLAY = 8
   STATE_MENU_RESULTS = 9
   STATE_GAME_STARTED = 10
+  STATE_MENU_TUTORIAL = 11
   
   CHEAT_PARTY = 0
   CHEAT_ALL_ITEMS = 1
@@ -5308,6 +5463,7 @@ class Game(object):
     self.menu_main = MainMenu(self.sound_player)
     self.menu_settings = SettingsMenu(self.sound_player,self.settings,self)
     self.menu_about = AboutMenu(self.sound_player)
+    self.menu_tutorial = TutorialMenu(self.sound_player,self.player_key_maps)
     self.menu_play_setup = PlaySetupMenu(self.sound_player,self.play_setup)
     self.menu_map_select = MapSelectMenu(self.sound_player)
     self.menu_play = PlayMenu(self.sound_player)
@@ -5422,6 +5578,7 @@ class Game(object):
         new_state = [
           Game.STATE_MENU_PLAY_SETUP,
           Game.STATE_MENU_SETTINGS,
+          Game.STATE_MENU_TUTORIAL,
           Game.STATE_MENU_ABOUT,
           Game.STATE_EXIT
           ] [self.active_menu.get_selected_item()[0]]
@@ -5468,6 +5625,14 @@ class Game(object):
         if self.active_menu.get_selected_item() == (0,0):
           new_state = Game.STATE_MENU_SETTINGS
         
+    # =============== TUTORIAL MENU ===============
+    elif self.state == Game.STATE_MENU_TUTORIAL:
+      self.active_menu = self.menu_tutorial
+      self.active_menu.update_text()    # the key mapping may have changed in the meantime
+
+      if self.active_menu.get_state() in (Menu.MENU_STATE_CONFIRM,Menu.MENU_STATE_CANCEL):
+        new_state = Game.STATE_MENU_MAIN
+
     # ================ ABOUT MENU =================
     elif self.state == Game.STATE_MENU_ABOUT: 
       self.active_menu = self.menu_about
