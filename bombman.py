@@ -3168,7 +3168,7 @@ class ResultMenu(Menu):
       if player.get_wins() > win_maximum:
         winner_team_numbers = [player.get_team_number()]
         win_maximum = player.get_wins()        
-      elif player.get_wins() == win_maximum:
+      elif player.get_wins() == win_maximum and player.get_team_number() not in winner_team_numbers:
         winner_team_numbers.append(player.get_team_number())
     
     separator = "__________________________________________________"
@@ -3186,7 +3186,7 @@ class ResultMenu(Menu):
         else:
           announcement_text += ", "
           
-        announcement_text += Renderer.colored_color_name(winner_team_numbers[winner_number])
+        announcement_text += Renderer.colored_color_name(winner_number)
     
       announcement_text += "!"
     
