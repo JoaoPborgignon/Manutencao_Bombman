@@ -3609,12 +3609,17 @@ class MapSelectMenu(Menu):
     if not self.map_filenames:
       return None
 
-    if not self.random_map_bag:
+    refill = max(1, len(self.map_filenames) // 2)
+
+    if len(self.random_map_bag) <= refill:
       self.random_map_bag = list(self.map_filenames)
       random.shuffle(self.random_map_bag)
 
       if len(self.random_map_bag) > 1 and self.random_map_bag[-1] == previous_map_name:
         self.random_map_bag[-1], self.random_map_bag[0] = self.random_map_bag[0], self.random_map_bag[-1]
+
+    if not self.random_map_bag:
+      return None
 
     return self.random_map_bag.pop()
 
